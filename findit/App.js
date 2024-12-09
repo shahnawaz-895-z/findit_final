@@ -6,11 +6,9 @@ import { View, StatusBar } from 'react-native';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
-import HomePage from './screens/homepage';
+import HomePage from './screens/homepage';  // Make sure the component is correctly imported
 import ReportFoundItem from './screens/ReportFoundItem';
-//import SearchScreen from './screens/SearchScreen';
-//import MessagesScreen from './screens/MessagesScreen';
-//import ProfileUpdateScreen from './screens/ProfileUpdateScreen';
+import ReportLostItem from './screens/ReportLostItem';
 
 const Stack = createStackNavigator();
 
@@ -19,9 +17,9 @@ const screenOptions = {
   cardStyle: { backgroundColor: '#fff' },
   cardStyleInterpolator: ({ current: { progress } }) => ({
     cardStyle: {
-      opacity: progress
-    }
-  })
+      opacity: progress,
+    },
+  }),
 };
 
 export default function App() {
@@ -66,7 +64,7 @@ export default function App() {
             component={HomePage}
             options={{
               animationEnabled: true,
-              gestureEnabled: false
+              gestureEnabled: false  // Disable gesture to avoid accidental back navigation
             }}
           />
           <Stack.Screen
@@ -77,7 +75,14 @@ export default function App() {
               gestureEnabled: true
             }}
           />
-          
+          <Stack.Screen
+            name="ReportLostItem"
+            component={ReportLostItem}
+            options={{
+              animationEnabled: true,
+              gestureEnabled: true
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

@@ -6,7 +6,9 @@ import multer from 'multer';
 import path from 'path';
 import User from './userdetail.js';
 import FoundItem from './founditemschema.js';
-
+import bcrypt from 'bcrypt';
+import fs from 'fs'; 
+import LostItem from './lostitemschema.js';
 // Load environment variables
 dotenv.config();
 
@@ -137,48 +139,159 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Found item route
-app.post('/report-found', upload.single('photo'), async (req, res) => {
-    try {
-        const { itemName, time, contact, location, date, description } = req.body;
 
-        // Validation
-        if (!itemName || !time || !contact || !location || !date) {
+
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check if the user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Compare the provided password with the hashed password in the database
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // If login is successful
+    res.status(200).json({ message: 'Login successful' });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+// Found item reporting route
+app.post('/reportfound', upload.single('photo'), async (req, res) => {
+    try {
+        const { contact, location, time, date, description } = req.body;
+
+        // Ensure required fields are present
+        if (!contact || !location || !time || !date || !description) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Required fields are missing'
+                message: 'All fields (contact, location, time, date, and description) are required'
             });
         }
 
-        // Create new found item
-        const newFoundItem = new FoundItem({
-            itemName,
-            time,
+        // If a photo is uploaded, include it in the record
+        const photoPath = req.file ? req.file.path : null;
+
+        // Create new found item record
+        const foundItem = new FoundItem({
             contact,
             location,
+            time,
             date,
             description,
-            photo: req.file ? req.file.path : null,
+            photo: photoPath ? fs.readFileSync(photoPath) : null // Store photo as binary or handle accordingly
         });
 
-        await newFoundItem.save();
-        console.log('Found item reported successfully');
-
+        await foundItem.save();
         res.status(201).json({
             status: 'success',
-            message: 'Found item reported successfully'
+            message: 'Found item reported successfully',
+            foundItem
         });
     } catch (error) {
-        console.error('Report found item error:', error);
+        console.error('Error reporting found item:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Server error during report submission'
+            message: 'Server error  reporting found item',
+            details: error.message
         });
     }
 });
+app.use((err, req, res, next) => {
+    console.error('Error details:', err);
+    res.status(500).json({ 
+      status: 'error', 
+      message: err.message || 'Something went wrong!',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  });
+  
+  // Modified lost item reporting route with better error handling
+  app.post('/reportlost', upload.single('photo'), async (req, res) => {
+      try {
+          console.log('Received request body:', req.body);
+          console.log('Received file:', req.file);
+  
+          const { contact, location, time, date, description, category } = req.body;
+  
+          // Detailed validation
+          const missingFields = [];
+          if (!contact) missingFields.push('contact');
+          if (!location) missingFields.push('location');
+          if (!time) missingFields.push('time');
+          if (!date) missingFields.push('date');
+          if (!description) missingFields.push('description');
+          if (!category) missingFields.push('category');
+  
+          if (missingFields.length > 0) {
+              return res.status(400).json({
+                  status: 'error',
+                  message: `Missing required fields: ${missingFields.join(', ')}`
+              });
+          }
+  
+          // Create new lost item record
+          const lostItem = new LostItem({
+              contact,
+              location,
+              time: new Date(time),
+              date: new Date(date),
+              description,
+              category
+          });
+  
+          // If a photo was uploaded, add it to the record
+          if (req.file) {
+              try {
+                  lostItem.photo = fs.readFileSync(req.file.path);
+                  lostItem.photoContentType = req.file.mimetype;
+                  // Clean up the uploaded file
+                  fs.unlinkSync(req.file.path);
+              } catch (photoError) {
+                  console.error('Error processing photo:', photoError);
+                  // Continue without photo if there's an error
+              }
+          }
+  
+          console.log('Saving lost item to database...');
+          await lostItem.save();
+          console.log('Lost item saved successfully');
+  
+          res.status(201).json({
+              status: 'success',
+              message: 'Lost item reported successfully',
+              lostItem: {
+                  _id: lostItem._id,
+                  contact: lostItem.contact,
+                  location: lostItem.location,
+                  time: lostItem.time,
+                  date: lostItem.date,
+                  description: lostItem.description,
+                  category: lostItem.category,
+                  hasPhoto: !!lostItem.photo
+              }
+          });
+      } catch (error) {
+          console.error('Detailed error in /reportlost:', error);
+          res.status(500).json({
+              status: 'error',
+              message: 'Server error while reporting lost item',
+              details: error.message
+          });
+      }
+  });
 
 // Start server
-const PORT = process.env.PORT || 5003;
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

@@ -1,6 +1,5 @@
-// LoginScreen.js
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 const LoginScreen = ({ navigation }) => {
@@ -8,15 +7,40 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [isValidEmail, setIsValidEmail] = useState(false);
 
-  const handleLogin = () => {
-    // Logic for login
-    console.log('Logging in with:', email, password);
-  };
-
   const validateEmail = (text) => {
     setEmail(text);
     const emailRegex = /\S+@\S+\.\S+/;
     setIsValidEmail(emailRegex.test(text));
+  };
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter both email and password');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://192.168.0.114:5003/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 200) {
+        Alert.alert('Success', 'Login successful');
+        // Navigate to the HomePage
+        navigation.navigate('HomePage'); // Changed 'homepage' to 'HomePage'
+      } else {
+        Alert.alert('Error', data.message || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    }
   };
 
   return (
@@ -39,7 +63,6 @@ const LoginScreen = ({ navigation }) => {
         secureTextEntry
       />
 
-      {/* Forgot Password Navigation */}
       <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={styles.forgotPassword}>Forgot password?</Text>
       </TouchableOpacity>
@@ -85,11 +108,6 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     paddingLeft: 40,
     fontSize: 16,
-  },
-  icon: {
-    position: 'absolute',
-    right: 40,
-    top: 100, // Adjust this based on where your inputs are located
   },
   forgotPassword: {
     color: 'red',
