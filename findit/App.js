@@ -9,6 +9,7 @@ import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import HomePage from './screens/homepage';  // Make sure the component is correctly imported
 import ReportFoundItem from './screens/ReportFoundItem';
 import ReportLostItem from './screens/ReportLostItem';
+import showfounditemdata from './screens/showfounditemdata';
 
 const Stack = createStackNavigator();
 
@@ -81,6 +82,14 @@ export default function App() {
             options={{
               animationEnabled: true,
               gestureEnabled: true
+            }}
+          />
+          <Stack.Screen
+            name="showfounditemdata"
+            component={showfounditemdata}  // Add new screen to stack
+            options={{
+              animationEnabled: true,
+              gestureEnabled: true,
             }}
           />
         </Stack.Navigator>

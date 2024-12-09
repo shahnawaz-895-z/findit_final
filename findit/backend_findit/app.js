@@ -9,6 +9,11 @@ import FoundItem from './founditemschema.js';
 import bcrypt from 'bcrypt';
 import fs from 'fs'; 
 import LostItem from './lostitemschema.js';
+import { pipeline } from '@huggingface/transformers';
+
+// Initialize the model
+const similarityModel = pipeline('feature-extraction', 'sentence-transformers/all-MiniLM-L6-v2');
+
 // Load environment variables
 dotenv.config();
 
@@ -290,6 +295,54 @@ app.use((err, req, res, next) => {
       }
   });
 
+
+  const computeTextSimilarity = async (text1, text2) => {
+    try {
+        const embeddings1 = await similarityModel(text1);
+        const embeddings2 = await similarityModel(text2);
+        
+        // Compute cosine similarity between embeddings
+        const cosineSimilarity = (a, b) => {
+            const dotProduct = a.reduce((sum, value, index) => sum + value * b[index], 0);
+            const normA = Math.sqrt(a.reduce((sum, value) => sum + value * value, 0));
+            const normB = Math.sqrt(b.reduce((sum, value) => sum + value * value, 0));
+            return dotProduct / (normA * normB);
+        };
+
+        return cosineSimilarity(embeddings1[0], embeddings2[0]);
+    } catch (error) {
+        console.error('Error in similarity computation:', error);
+        return 0; // Return 0 in case of an error
+    }
+};
+// Endpoint to find matching items based on description similarity
+app.post('/matchingfounditems', async (req, res) => {
+    try {
+        const { lostItemDescription } = req.query;  // Assume description is passed as a query param
+
+        if (!lostItemDescription) {
+            return res.status(400).json({ message: "Lost item description is required" });
+        }
+
+        const foundItems = await FoundItem.find();
+
+        // Store found items with similarity scores
+        let matchedItems = [];
+
+        for (let item of foundItems) {
+            const similarity = await computeTextSimilarity(lostItemDescription, item.description);
+            
+            if (similarity >= 0.5) {  // 50% similarity threshold
+                matchedItems.push(item);
+            }
+        }
+
+        res.status(200).json(matchedItems);
+    } catch (error) {
+        console.error('Error in /matchingfounditems:', error);
+        res.status(500).json({ message: 'Error processing matching items', error: error.message });
+    }
+});
 // Start server
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, '0.0.0.0', () => {

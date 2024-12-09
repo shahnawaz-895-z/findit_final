@@ -7,6 +7,7 @@ import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
 
+
 const ReportLostItem = () => {
   const navigation = useNavigation();
   const [time, setTime] = useState(new Date());
@@ -88,114 +89,82 @@ const ReportLostItem = () => {
   const handleSubmit = async () => {
     // Validation
     if (!description) {
-      Alert.alert('Error', 'Please provide a description.');
-      return;
+        Alert.alert('Error', 'Please provide a description.');
+        return;
     }
     if (!contact) {
-      Alert.alert('Error', 'Please provide contact information.');
-      return;
+        Alert.alert('Error', 'Please provide contact information.');
+        return;
     }
     if (!category) {
-      Alert.alert('Error', 'Please select a category.');
-      return;
+        Alert.alert('Error', 'Please select a category.');
+        return;
     }
     if (!location) {
-      Alert.alert('Error', 'Please provide the location.');
-      return;
+        Alert.alert('Error', 'Please provide the location.');
+        return;
     }
 
     setIsLoading(true);
 
     try {
-      // Log the data being sent
-      console.log('Submitting data:', {
-        contact,
-        category,
-        location,
-        description,
-        time: time.toISOString(),
-        date: date.toISOString(),
-        hasPhoto: !!photo
-      });
+        // Log the data being sent
+        console.log('Submitting data:', {
+            contact,
+            category,
+            location,
+            description,
+            time: time.toISOString(),
+            date: date.toISOString(),
+            hasPhoto: !!photo
+        });
 
-      const formData = new FormData();
-      formData.append('contact', contact);
-      formData.append('category', category);
-      formData.append('location', location);
-      formData.append('description', description);
-      formData.append('time', time.toISOString());
-      formData.append('date', date.toISOString());
+        const formData = new FormData();
+        formData.append('contact', contact);
+        formData.append('category', category);
+        formData.append('location', location);
+        formData.append('description', description);
+        formData.append('time', time.toISOString());
+        formData.append('date', date.toISOString());
 
-      // Append photo if exists
-      if (photo) {
-        try {
-          const filename = photo.split('/').pop();
-          const match = /\.(\w+)$/.exec(filename);
-          const type = match ? `image/${match[1]}` : 'image/jpeg';
-          
-          formData.append('photo', {
-            uri: Platform.OS === 'ios' ? photo.replace('file://', '') : photo,
-            name: filename || 'photo.jpg',
-            type
-          });
-          console.log('Photo appended to form data');
-        } catch (photoError) {
-          console.error('Error preparing photo:', photoError);
+        // Append photo if exists
+        if (photo) {
+            const filename = photo.split('/').pop();
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : 'image/jpeg';
+            
+            formData.append('photo', {
+                uri: Platform.OS === 'ios' ? photo.replace('file://', '') : photo,
+                name: filename || 'photo.jpg',
+                type
+            });
         }
-      }
 
-      // Log the FormData entries
-      for (let pair of formData.entries()) {
-        console.log(pair[0], pair[1]);
-      }
+        // Sending the request
+        const response = await fetch(`${BACKEND_URL}/reportlost`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'multipart/form-data',
+            },
+        });
 
-      // First, try using fetch
-      console.log('Sending request to:', `${BACKEND_URL}/reportlost`);
-      const response = await fetch(`${BACKEND_URL}/reportlost`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      console.log('Response status:', response.status);
-      const responseData = await response.json();
-      console.log('Response data:', responseData);
-
-      if (response.ok) {
-        Alert.alert('Success', 'Report submitted successfully!');
-        // Reset form
-        setContact('');
-        setCategory('');
-        setLocation('');
-        setDescription('');
-        setPhoto(null);
-        setTime(new Date());
-        setDate(new Date());
-      } else {
-        throw new Error(responseData.message || 'Server returned an error');
-      }
+        const responseData = await response.json();
+        if (response.ok) {
+            Alert.alert('Success', 'Report submitted successfully!');
+            // Navigate to ShowFoundItemData page and pass the description
+            navigation.navigate('showfounditemdata', { lostItemDescription: description });
+        } else {
+            throw new Error(responseData.message || 'Server returned an error');
+        }
     } catch (error) {
-      console.error('Detailed error:', error);
-      
-      // More detailed error alert
-      Alert.alert(
-        'Error',
-        `Faileds to submit report: ${error.message}\n\nPlease check your connection and try again.`,
-        [
-          { text: 'OK' },
-          { 
-            text: 'Show Details', 
-            onPress: () => console.log('Full error:', error)
-          }
-        ]
-      );
+        Alert.alert('Error', `Failed to submit report: ${error.message}`);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
-  };
+};
+
 
   const onChangeDate = (event, selectedDate) => {
     const currentDate = selectedDate || date;
@@ -210,9 +179,9 @@ const ReportLostItem = () => {
   };
 
   const handleNoPicture = () => {
-    navigation.navigate('ReportLostItemWithPic');
+    navigation.navigate('lostitemreposting');
   };
-  
+ 
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Report Lost Item</Text>
