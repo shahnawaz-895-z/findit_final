@@ -10,6 +10,8 @@ import bcrypt from 'bcrypt';
 import fs from 'fs'; 
 import LostItem from './lostitemschema.js';
 import { pipeline } from '@huggingface/transformers';
+import natural from 'natural';
+import compromise from 'compromise';
 
 // Initialize the model
 const similarityModel = pipeline('feature-extraction', 'sentence-transformers/all-MiniLM-L6-v2');
@@ -295,52 +297,98 @@ app.use((err, req, res, next) => {
       }
   });
 
-
-  const computeTextSimilarity = async (text1, text2) => {
-    try {
-        const embeddings1 = await similarityModel(text1);
-        const embeddings2 = await similarityModel(text2);
+  const computeTextSimilarity = (text1, text2) => {
+    // Normalize and preprocess text
+    const normalizeText = (text) => {
+        // Convert to lowercase
+        text = text.toLowerCase().trim();
         
-        // Compute cosine similarity between embeddings
-        const cosineSimilarity = (a, b) => {
-            const dotProduct = a.reduce((sum, value, index) => sum + value * b[index], 0);
-            const normA = Math.sqrt(a.reduce((sum, value) => sum + value * value, 0));
-            const normB = Math.sqrt(b.reduce((sum, value) => sum + value * value, 0));
-            return dotProduct / (normA * normB);
-        };
+        // Remove punctuation and special characters
+        text = text.replace(/[^\w\s]/g, '');
+        
+        return text;
+    };
 
-        return cosineSimilarity(embeddings1[0], embeddings2[0]);
-    } catch (error) {
-        console.error('Error in similarity computation:', error);
-        return 0; // Return 0 in case of an error
-    }
+    // Tokenize and remove stop words
+    const preprocessText = (text) => {
+        const doc = compromise(text);
+        const processedTokens = doc
+            .remove('StopWord')
+            .text()
+            .split(/\s+/);
+        return processedTokens;
+    };
+
+    // Compute Jaccard similarity
+    const computeJaccardSimilarity = (set1, set2) => {
+        const intersection = set1.filter(token => set2.includes(token));
+        const union = [...new Set([...set1, ...set2])];
+        return intersection.length / union.length;
+    };
+
+    // Compute TF-IDF similarity
+    const computeTFIDFSimilarity = (text1, text2) => {
+        const tokenizer = new natural.WordTokenizer();
+        const tokens1 = tokenizer.tokenize(normalizeText(text1));
+        const tokens2 = tokenizer.tokenize(normalizeText(text2));
+
+        const tfidf = new natural.TfIdf();
+        tfidf.addDocument(tokens1);
+        tfidf.addDocument(tokens2);
+
+        let similarity = 0;
+        tokens1.forEach((token, index) => {
+            const tfidfValue1 = tfidf.tfidf(token, 0);
+            const tfidfValue2 = tfidf.tfidf(token, 1);
+            similarity += Math.min(tfidfValue1, tfidfValue2);
+        });
+
+        return similarity / Math.max(tokens1.length, tokens2.length);
+    };
+
+    // Preprocess texts
+    const processedText1 = preprocessText(text1);
+    const processedText2 = preprocessText(text2);
+
+    // Compute multiple similarity metrics
+    const jaccardSimilarity = computeJaccardSimilarity(processedText1, processedText2);
+    const tfidfSimilarity = computeTFIDFSimilarity(text1, text2);
+
+    // Combine similarities with weighted average
+    const combinedSimilarity = (jaccardSimilarity * 0.4) + (tfidfSimilarity * 0.6);
+
+    return combinedSimilarity;
 };
+
 // Endpoint to find matching items based on description similarity
 app.post('/matchingfounditems', async (req, res) => {
     try {
-        const { lostItemDescription } = req.query;  // Assume description is passed as a query param
+        const { lostItemDescription } = req.body;
 
         if (!lostItemDescription) {
-            return res.status(400).json({ message: "Lost item description is required" });
+            return res.status(400).json({ status: 'error', message: 'Missing lost item description' });
         }
 
-        const foundItems = await FoundItem.find();
+        // Logic for finding matching items from the database
+        const matchedItems = await FoundItem.find({
+            description: { $regex: lostItemDescription, $options: 'i' }
+        });
 
-        // Store found items with similarity scores
-        let matchedItems = [];
-
-        for (let item of foundItems) {
-            const similarity = await computeTextSimilarity(lostItemDescription, item.description);
-            
-            if (similarity >= 0.5) {  // 50% similarity threshold
-                matchedItems.push(item);
-            }
+        if (matchedItems.length === 0) {
+            return res.status(200).json({ status: 'not_found', message: 'No items match your description' });
         }
 
-        res.status(200).json(matchedItems);
+        res.status(200).json({
+            status: 'success',
+            matchedItems
+        });
     } catch (error) {
         console.error('Error in /matchingfounditems:', error);
-        res.status(500).json({ message: 'Error processing matching items', error: error.message });
+        res.status(500).json({
+            status: 'error',
+            message: 'Error finding matched items',
+            details: error.message
+        });
     }
 });
 // Start server

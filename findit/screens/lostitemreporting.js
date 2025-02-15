@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,16 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { Picker } from '@react-native-picker/picker'; // Correct import for Picker
 import { Ionicons } from '@expo/vector-icons';
+import Voice from '@react-native-voice/voice';
 
-const LostItemReporting = ({ navigation }) => {
+const lostitemreporting = ({ navigation }) => {
   const [category, setCategory] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState({});
   const [description, setDescription] = useState('');
+  const [isListening, setIsListening] = useState(false); // To manage the recording state
+  const [voiceResult, setVoiceResult] = useState('');
 
   const categories = [
     'Electronics',
@@ -25,19 +28,42 @@ const LostItemReporting = ({ navigation }) => {
     'Others',
   ];
 
+  const handleVoiceRecognition = () => {
+    if (isListening) {
+      Voice.stop();
+      setIsListening(false);
+    } else {
+      Voice.start('en-US');
+      setIsListening(true);
+    }
+  };
+
+  const handleVoiceResults = (e) => {
+    setVoiceResult(e.value[0]);
+    setDescription(e.value[0]); // Optionally, update the description with voice input
+  };
+
+  useEffect(() => {
+    Voice.onSpeechResults = handleVoiceResults;
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, []);
+
   const renderAdditionalQuestions = () => {
     switch (category) {
       case 'Electronics':
         return (
           <>
             <Text style={styles.label}>Device Type:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, deviceType: text }))}
               placeholder="e.g., Smartphone, Laptop"
             />
             <Text style={styles.label}>Brand:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, brand: text }))}
               placeholder="e.g., Apple, Samsung"
@@ -48,16 +74,16 @@ const LostItemReporting = ({ navigation }) => {
         return (
           <>
             <Text style={styles.label}>Bag Type:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, bagType: text }))}
               placeholder="e.g., Backpack, Handbag"
             />
             <Text style={styles.label}>Color:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, color: text }))}
-              placeholder="e.g., Black, Brown"
+              placeholder="e.g., Black, Red"
             />
           </>
         );
@@ -65,16 +91,38 @@ const LostItemReporting = ({ navigation }) => {
         return (
           <>
             <Text style={styles.label}>Clothing Type:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, clothingType: text }))}
-              placeholder="e.g., T-shirt, Jeans"
+              placeholder="e.g., Shirt, Pants"
             />
             <Text style={styles.label}>Size:</Text>
-            <TextInput 
+            <TextInput
               style={styles.input}
               onChangeText={text => setAdditionalDetails(prev => ({ ...prev, size: text }))}
               placeholder="e.g., M, L, XL"
+            />
+          </>
+        );
+      case 'Accessories':
+        return (
+          <>
+            <Text style={styles.label}>Accessory Type:</Text>
+            <TextInput
+              style={styles.input}
+              onChangeText={text => setAdditionalDetails(prev => ({ ...prev, accessoryType: text }))}
+              placeholder="e.g., Watch, Sunglasses"
+            />
+          </>
+        );
+      case 'Documents':
+        return (
+          <>
+            <Text style={styles.label}>Document Type:</Text>
+            <TextInput
+              style={styles.input}
+              onChangeText={text => setAdditionalDetails(prev => ({ ...prev, documentType: text }))}
+              placeholder="e.g., Passport, ID"
             />
           </>
         );
@@ -83,58 +131,51 @@ const LostItemReporting = ({ navigation }) => {
     }
   };
 
-  const handleSubmit = () => {
-    if (!category) {
-      Alert.alert('Error', 'Please select a category.');
-      return;
-    }
-
-    // Here you would typically send the data to your backend
-    // For now, we'll just show an alert with the collected data
-    Alert.alert(
-      'Report Submitted',
-      `Category: ${category}\nDescription: ${description}\nAdditional Details: ${JSON.stringify(additionalDetails)}`,
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
-    );
-  };
-
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Report Lost Item</Text>
-        <Ionicons name="alert-circle-outline" size={32} color="#4a148c" />
-      </View>
+      <Text style={styles.title}>Lost Item Reporting</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Category:</Text>
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={category}
-            onValueChange={(itemValue) => setCategory(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select a category" value="" />
-            {categories.map((item, index) => (
-              <Picker.Item key={index} label={item} value={item} />
-            ))}
-          </Picker>
-        </View>
+      {/* Category Picker */}
+      <Text style={styles.label}>Select Category:</Text>
+      <Picker
+        selectedValue={category}
+        onValueChange={value => setCategory(value)}
+        style={styles.picker}
+      >
+        {categories.map((item, index) => (
+          <Picker.Item label={item} value={item} key={index} />
+        ))}
+      </Picker>
 
-        {category && renderAdditionalQuestions()}
+      {/* Additional Questions */}
+      {renderAdditionalQuestions()}
 
-        <Text style={styles.label}>Description:</Text>
-        <TextInput
-          style={styles.descriptionInput}
-          multiline
-          numberOfLines={4}
-          onChangeText={setDescription}
-          placeholder="Provide a detailed description of the lost item"
-        />
+      {/* Description */}
+      <Text style={styles.label}>Description:</Text>
+      <TextInput
+        style={styles.input}
+        value={description}
+        onChangeText={setDescription}
+        placeholder="Describe the item"
+      />
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>SUBMIT REPORT</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Voice Input */}
+      <TouchableOpacity style={styles.voiceButton} onPress={handleVoiceRecognition}>
+        <Ionicons name={isListening ? 'mic-off' : 'mic'} size={40} color="#000" />
+      </TouchableOpacity>
+
+      {/* Show voice input result */}
+      <Text style={styles.voiceResult}>Voice Input: {voiceResult}</Text>
+
+      {/* Submit Button */}
+      <TouchableOpacity
+        style={styles.submitButton}
+        onPress={() => {
+          Alert.alert('Report Submitted', 'Your lost item report has been submitted.');
+        }}
+      >
+        <Text style={styles.submitButtonText}>Submit Report</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 };
@@ -142,80 +183,51 @@ const LostItemReporting = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
+    padding: 16,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#4a148c',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-    margin: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  pickerWrapper: {
-    borderWidth: 1,
-    borderColor: '#4a148c',
-    borderRadius: 5,
+    textAlign: 'center',
     marginBottom: 20,
-    overflow: 'hidden',
+  },
+  label: {
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  input: {
+    height: 40,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+    fontSize: 16,
   },
   picker: {
     height: 50,
     width: '100%',
+    marginBottom: 16,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 5,
-    color: '#4a148c',
+  voiceButton: {
+    alignSelf: 'center',
+    marginVertical: 16,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 15,
+  voiceResult: {
     fontSize: 16,
-  },
-  descriptionInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 20,
-    fontSize: 16,
-    height: 120,
-    textAlignVertical: 'top',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   submitButton: {
-    backgroundColor: '#4a148c',
-    padding: 15,
+    backgroundColor: '#28a745',
+    paddingVertical: 12,
     borderRadius: 5,
     alignItems: 'center',
   },
   submitButtonText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold',
   },
 });
 
-export default LostItemReporting;
-
+export default lostitemreporting;

@@ -23,7 +23,7 @@ const ReportLostItem = () => {
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
-  const BACKEND_URL = 'http://192.168.0.114:5003'; 
+  const BACKEND_URL = 'http://172.17.64.47:5003'; 
   const HUGGING_FACE_API_KEY = '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'; // Replace with your API key
 
   const pickImage = async () => {
@@ -108,58 +108,50 @@ const ReportLostItem = () => {
     setIsLoading(true);
 
     try {
-        // Log the data being sent
-        console.log('Submitting data:', {
+        let photoData = null;
+        if (photo) {
+            // Convert photo to base64
+            const base64 = await FileSystem.readAsStringAsync(photo, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            photoData = `data:image/jpeg;base64,${base64}`;
+        }
+
+        // Create the request body
+        const requestBody = {
             contact,
             category,
             location,
             description,
             time: time.toISOString(),
             date: date.toISOString(),
-            hasPhoto: !!photo
-        });
+            photo: photoData
+        };
 
-        const formData = new FormData();
-        formData.append('contact', contact);
-        formData.append('category', category);
-        formData.append('location', location);
-        formData.append('description', description);
-        formData.append('time', time.toISOString());
-        formData.append('date', date.toISOString());
-
-        // Append photo if exists
-        if (photo) {
-            const filename = photo.split('/').pop();
-            const match = /\.(\w+)$/.exec(filename);
-            const type = match ? `image/${match[1]}` : 'image/jpeg';
-            
-            formData.append('photo', {
-                uri: Platform.OS === 'ios' ? photo.replace('file://', '') : photo,
-                name: filename || 'photo.jpg',
-                type
-            });
-        }
-
-        // Sending the request
-        const response = await fetch(`${BACKEND_URL}/reportlost`, {
+        // Make the API call using axios
+        const response = await axios({
             method: 'POST',
-            body: formData,
+            url: `${BACKEND_URL}/reportlost`,
+            data: requestBody,
             headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'multipart/form-data',
-            },
+                'Content-Type': 'application/json',
+            }
         });
 
-        const responseData = await response.json();
-        if (response.ok) {
+        if (response.status === 200 || response.status === 201) {
             Alert.alert('Success', 'Report submitted successfully!');
-            // Navigate to ShowFoundItemData page and pass the description
-            navigation.navigate('showfounditemdata', { lostItemDescription: description });
+            navigation.navigate('showfounditemdata', { 
+                lostItemDescription: description 
+            });
         } else {
-            throw new Error(responseData.message || 'Server returned an error');
+            throw new Error('Server returned an unexpected status');
         }
     } catch (error) {
-        Alert.alert('Error', `Failed to submit report: ${error.message}`);
+        console.error('Submission error:', error);
+        Alert.alert(
+            'Error', 
+            `Failed to submit report: ${error.response?.data?.message || error.message}`
+        );
     } finally {
         setIsLoading(false);
     }

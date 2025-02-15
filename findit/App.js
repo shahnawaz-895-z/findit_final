@@ -10,6 +10,7 @@ import HomePage from './screens/homepage';  // Make sure the component is correc
 import ReportFoundItem from './screens/ReportFoundItem';
 import ReportLostItem from './screens/ReportLostItem';
 import showfounditemdata from './screens/showfounditemdata';
+import lostitemreporting from './screens/lostitemreporting';
 
 const Stack = createStackNavigator();
 
@@ -87,6 +88,14 @@ export default function App() {
           <Stack.Screen
             name="showfounditemdata"
             component={showfounditemdata}  // Add new screen to stack
+            options={{
+              animationEnabled: true,
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="lostitemreposting"
+            component={lostitemreporting}  // Add new screen to stack
             options={{
               animationEnabled: true,
               gestureEnabled: true,
