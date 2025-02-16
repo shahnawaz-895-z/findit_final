@@ -1,5 +1,5 @@
 import React from 'react';
-//import logoImage from '../assets/logo.jpeg';
+import logoImage from '../assets/logo.jpeg';
 import { 
   View, 
   Text, 

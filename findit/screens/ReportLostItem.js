@@ -6,7 +6,7 @@ import { Picker } from '@react-native-picker/picker';
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
-
+import { API_URL } from '@env';
 
 const ReportLostItem = () => {
   const navigation = useNavigation();
@@ -23,7 +23,7 @@ const ReportLostItem = () => {
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
-  const BACKEND_URL = 'http://172.17.64.47:5003'; 
+  const BACKEND_URL = API_URL; 
   const HUGGING_FACE_API_KEY = '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'; // Replace with your API key
 
   const pickImage = async () => {
