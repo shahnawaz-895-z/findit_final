@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { API_URL } from '@env';
 
 import { 
     View, 

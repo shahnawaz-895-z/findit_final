@@ -19,8 +19,6 @@
     "@react-native-voice/voice": "^3.2.4",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/stack": "^6.4.1",
-    "@tensorflow/tfjs": "^4.22.0",
-    "@tensorflow/tfjs-node": "^4.22.0",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "compromise": "^14.14.3",
@@ -45,7 +43,7 @@
     "react-native-modal-datetime-picker": "^18.0.0",
     "react-native-reanimated": "~3.16.1",
     "react-native-safe-area-context": "4.12.0",
-    "react-native-screens": "^4.4.0",
+    "react-native-screens": "~4.4.0",
     "react-native-twitter-signin": "^1.1.1",
     "react-native-vector-icons": "^10.2.0",
     "react-native-voice": "^0.3.0"

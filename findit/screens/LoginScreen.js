@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { API_URL } from '@env';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
