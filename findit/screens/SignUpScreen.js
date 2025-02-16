@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-
+import { API_URL } from '@env';
 
 import { 
     View, 
@@ -33,7 +33,7 @@ const SignUpScreen = ({ navigation }) => {
             }
 
             console.log('Sending registration request');
-            const response = await fetch('http://172.17.64.47:5003/register', {
+            const response = await fetch(`${API_URL}/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

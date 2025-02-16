@@ -7,6 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import { API_URL } from '@env';
 
 const ReportFoundItem = () => {
   const [contact, setContact] = useState('');
@@ -136,7 +137,7 @@ const ReportFoundItem = () => {
     }
 
     try {
-      const response = await axios.post('http://172.17.64.47:5003/reportfound', formData, {
+      const response = await axios.post(`${API_URL}/reportfound`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
