@@ -9,9 +9,12 @@ import {
     SafeAreaView,
     KeyboardAvoidingView,
     Platform,
-    Image
+    Image,
+    ActivityIndicator,
+    ScrollView
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 
 const SignUpScreen = ({ navigation }) => {
     const [name, setName] = useState('');
@@ -20,36 +23,68 @@ const SignUpScreen = ({ navigation }) => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [profileImage, setProfileImage] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     const pickImage = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        
-        if (status !== 'granted') {
-            Alert.alert('Permission needed', 'Please grant permission to access your photos');
-            return;
-        }
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Please grant permission to access your photos');
+                return;
+            }
 
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.5,
-        });
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.5,
+                allowsMultipleSelection: false,
+                // Support common image formats
+                exif: false, // Don't need EXIF data
+            });
 
-        if (!result.canceled) {
-            setProfileImage(result.assets[0]);
+            if (!result.canceled) {
+                // Process selected image
+                const selectedImage = result.assets[0];
+                
+                // Get file info to validate size and type
+                const fileInfo = await FileSystem.getInfoAsync(selectedImage.uri);
+                
+                // Validate image file size (5MB max)
+                if (fileInfo.size > 5 * 1024 * 1024) {
+                    Alert.alert('Image too large', 'Please select an image smaller than 5MB');
+                    return;
+                }
+                
+                setProfileImage(selectedImage);
+            }
+        } catch (error) {
+            console.error('Error picking image:', error);
+            Alert.alert('Error', 'Failed to select image');
         }
     };
 
     const handleSignUp = async () => {
         try {
-            if (!name || !email || !contact || !password || !confirmPassword || !profileImage) {
-                Alert.alert('Error', 'All fields including profile image are required');
+            setIsUploading(true);
+            
+            // Validate inputs
+            if (!name || !email || !contact || !password || !confirmPassword) {
+                Alert.alert('Error', 'All fields are required');
+                setIsUploading(false);
+                return;
+            }
+            
+            if (!profileImage) {
+                Alert.alert('Error', 'Please select a profile image');
+                setIsUploading(false);
                 return;
             }
     
             if (password !== confirmPassword) {
                 Alert.alert('Error', 'Passwords do not match');
+                setIsUploading(false);
                 return;
             }
     
@@ -59,15 +94,42 @@ const SignUpScreen = ({ navigation }) => {
             formData.append('mobile', contact);
             formData.append('password', password);
             
-            // Append image
+            // Process and append image with proper type detection
             const imageUri = profileImage.uri;
             const filename = imageUri.split('/').pop();
-            const match = /\.(\w+)$/.exec(filename);
-            const type = match ? `image/${match[1]}` : 'image';
+            const match = /\.(\w+)$/.exec(filename?.toLowerCase());
+            
+            // Determine MIME type based on file extension
+            let type;
+            if (match) {
+                switch (match[1]) {
+                    case 'jpg':
+                    case 'jpeg':
+                        type = 'image/jpeg';
+                        break;
+                    case 'png':
+                        type = 'image/png';
+                        break;
+                    case 'gif':
+                        type = 'image/gif';
+                        break;
+                    case 'webp':
+                        type = 'image/webp';
+                        break;
+                    case 'heic':
+                        type = 'image/heic';
+                        break;
+                    default:
+                        type = 'image/jpeg';  // Default fallback
+                }
+            } else {
+                // If extension can't be determined, use default or detected type
+                type = profileImage.type || 'image/jpeg';
+            }
             
             formData.append('profileImage', {
                 uri: imageUri,
-                name: filename,
+                name: filename || `profile.${type.split('/')[1]}`,
                 type
             });
     
@@ -84,7 +146,12 @@ const SignUpScreen = ({ navigation }) => {
             });
     
             // Log the raw response
-            console.log('Raw response:', response);
+            console.log('Raw response status:', response.status);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
             
             const data = await response.json();
             console.log('Response data:', data);
@@ -106,6 +173,8 @@ const SignUpScreen = ({ navigation }) => {
         } catch (error) {
             console.error('Registration error:', error);
             Alert.alert('Error', 'Network request failed: ' + error.message);
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -115,79 +184,92 @@ const SignUpScreen = ({ navigation }) => {
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={styles.container}
             >
-                <View style={styles.formContainer}>
-                    <Text style={styles.title}>Sign Up</Text>
+                <ScrollView>
+                    <View style={styles.formContainer}>
+                        <Text style={styles.title}>Sign Up</Text>
 
-                    <TouchableOpacity 
-                        style={styles.imageContainer} 
-                        onPress={pickImage}
-                    >
-                        {profileImage ? (
-                            <Image 
-                                source={{ uri: profileImage.uri }} 
-                                style={styles.profileImage} 
-                            />
-                        ) : (
-                            <View style={styles.placeholderImage}>
-                                <Text>Tap to add profile photo</Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Name"
-                        value={name}
-                        onChangeText={setName}
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Email"
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Contact"
-                        value={contact}
-                        onChangeText={setContact}
-                        keyboardType="phone-pad"
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Confirm Password"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        secureTextEntry
-                    />
-
-                    <TouchableOpacity 
-                        style={styles.signUpButton} 
-                        onPress={handleSignUp}
-                    >
-                        <Text style={styles.signUpButtonText}>SIGN UP</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.signupContainer}>
-                        <Text style={styles.signupText}>Already Have An Account?</Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                            <Text style={styles.signupLink}>Sign In</Text>
+                        <TouchableOpacity 
+                            style={styles.imageContainer} 
+                            onPress={pickImage}
+                            disabled={isUploading}
+                        >
+                            {profileImage ? (
+                                <Image 
+                                    source={{ uri: profileImage.uri }} 
+                                    style={styles.profileImage} 
+                                />
+                            ) : (
+                                <View style={styles.placeholderImage}>
+                                    <Text>Tap to add profile photo</Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Name"
+                            value={name}
+                            onChangeText={setName}
+                            editable={!isUploading}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Email"
+                            value={email}
+                            onChangeText={setEmail}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            editable={!isUploading}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Contact"
+                            value={contact}
+                            onChangeText={setContact}
+                            keyboardType="phone-pad"
+                            editable={!isUploading}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Password"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry
+                            editable={!isUploading}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Confirm Password"
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            secureTextEntry
+                            editable={!isUploading}
+                        />
+
+                        <TouchableOpacity 
+                            style={[styles.signUpButton, isUploading && styles.disabledButton]} 
+                            onPress={handleSignUp}
+                            disabled={isUploading}
+                        >
+                            {isUploading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.signUpButtonText}>SIGN UP</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <View style={styles.signupContainer}>
+                            <Text style={styles.signupText}>Already Have An Account?</Text>
+                            <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={isUploading}>
+                                <Text style={styles.signupLink}>Sign In</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
+                </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -244,6 +326,9 @@ const styles = StyleSheet.create({
         borderRadius: 25,
         alignItems: 'center',
         marginTop: 10,
+    },
+    disabledButton: {
+        backgroundColor: '#9a8a9a',
     },
     signUpButtonText: {
         color: '#fff',
