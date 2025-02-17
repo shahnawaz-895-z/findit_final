@@ -28,16 +28,13 @@ app.use(cors({
 app.use(express.json());
 
 // Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads/'); // Ensure this folder exists
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname));
+const storage = multer.memoryStorage(); // Use memory storage instead of disk storage
+const upload = multer({ 
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
     }
 });
-
-const upload = multer({ storage: storage });
 
 // MongoDB connection
 const connectDB = async () => {
@@ -91,28 +88,87 @@ app.get('/', (req, res) => {
 });*/}
 
 // **Register Route**
-app.post('/register', async (req, res) => {
+app.post('/register', upload.single('profileImage'), async (req, res) => {
     try {
+        console.log('Received request body:', req.body);
+        console.log('Received file:', req.file);
+
         const { name, email, mobile, password } = req.body;
-        if (!name || !email || !mobile || !password) {
-            return res.status(400).json({ status: 'error', message: 'All fields are required' });
+
+        // Validate required fields
+        const missingFields = [];
+        if (!name) missingFields.push('name');
+        if (!email) missingFields.push('email');
+        if (!mobile) missingFields.push('mobile');
+        if (!password) missingFields.push('password');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Missing required fields: ${missingFields.join(', ')}` 
+            });
         }
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid email format' });
+        // Validate and process profile image if provided
+        let profileImage = null;
+        let profileImageType = null;
+        
+        if (req.file) {
+            try {
+                // Convert image buffer to base64
+                profileImage = req.file.buffer.toString('base64');
+                
+                // Clean the base64 string
+                profileImage = profileImage.replace(/[\s\r\n]+/g, '');
+                
+                // Validate base64 format
+                if (!profileImage.match(/^[A-Za-z0-9+/]+=*$/)) {
+                    return res.status(400).json({ 
+                        status: 'error', 
+                        message: 'Invalid image format' 
+                    });
+                }
+                
+                profileImageType = req.file.mimetype;
+            } catch (error) {
+                console.error('Error processing profile image:', error);
+                return res.status(400).json({ 
+                    status: 'error', 
+                    message: 'Error processing profile image' 
+                });
+            }
         }
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            return res.status(409).json({ status: 'error', message: 'User already exists' });
+            return res.status(409).json({ 
+                status: 'error', 
+                message: 'User already exists' 
+            });
         }
 
-        const newUser = new User({ name, email, mobile, password });
+        const newUser = new User({
+            name,
+            email,
+            mobile,
+            password,
+            profileImage,
+            profileImageType
+        });
+
         await newUser.save();
-        res.status(201).json({ status: 'success', message: 'User registered successfully' });
+        
+        res.status(201).json({ 
+            status: 'success', 
+            message: 'User registered successfully' 
+        });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Server error during registration', details: error.message });
+        console.error('Registration error:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Server error during registration', 
+            details: error.message 
+        });
     }
 });
 
@@ -121,12 +177,93 @@ app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
+        
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
-        res.status(200).json({ message: 'Login successful' });
+
+        // Process and validate the profile image
+        let profileImage = null;
+        try {
+            if (user.profileImage) {
+                // Convert Buffer to base64 if needed
+                if (Buffer.isBuffer(user.profileImage)) {
+                    profileImage = user.profileImage.toString('base64');
+                } else if (typeof user.profileImage === 'string') {
+                    profileImage = user.profileImage;
+                }
+                
+                // Clean the base64 string
+                if (profileImage) {
+                    // Remove any existing data URL prefix
+                    profileImage = profileImage.replace(/^data:image\/[a-z]+;base64,/, '');
+                    // Remove any whitespace or invalid characters
+                    profileImage = profileImage.replace(/[\s\r\n]+/g, '');
+                    // Validate base64 format
+                    if (!profileImage.match(/^[A-Za-z0-9+/]+=*$/)) {
+                        console.warn('Invalid base64 format detected, clearing profile image');
+                        profileImage = null;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error processing profile image:', error);
+            profileImage = null;
+        }
+
+        const profileImageType = user.profileImageType || 'image/jpeg';
+        console.log('Login: Profile image validation completed');
+
+        const userResponse = {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            mobile: user.mobile,
+            profileImage: user.profileImage ? user.profileImage.toString('base64') : null,
+            profileImageType: user.profileImageType || 'image/jpeg'
+        };
+        console.log('Profile image length:', userResponse.profileImage?.length);
+console.log('Profile image type:', userResponse.profileImageType);
+        
+
+        res.status(200).json({ 
+            message: 'Login successful', 
+            user: userResponse 
+        });
     } catch (error) {
+        console.error('Login error:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// **Get Profile Route**
+app.get('/profile/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'User not found' });
+        }
+        res.status(200).json({ status: 'success', user });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Server error fetching profile', details: error.message });
+    }
+});
+
+// **Update Profile Route**
+app.put('/profile/:userId', async (req, res) => {
+    try {
+        const { name, email, contact } = req.body;
+        const updatedUser = await User.findByIdAndUpdate(
+            req.params.userId,
+            { name, email, contact },
+            { new: true }
+        );
+        if (!updatedUser) {
+            return res.status(404).json({ status: 'error', message: 'User not found' });
+        }
+        res.status(200).json({ status: 'success', message: 'Profile updated successfully', user: updatedUser });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Server error updating profile', details: error.message });
     }
 });
 

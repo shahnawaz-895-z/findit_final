@@ -1,5 +1,4 @@
 import React from 'react';
-import logoImage from '../assets/logo.jpeg';
 import { 
   View, 
   Text, 
@@ -11,13 +10,13 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
-const HomePage = ({ navigation, route }) => {
+const HomePage = ({ navigation }) => {
   const handleReportLostItem = () => {
-    navigation.navigate('ReportLostItem');  // Navigate to lost item report screen
+    navigation.navigate('ReportLostItem');
   };
 
   const handleReportFoundItem = () => {
-    navigation.navigate('ReportFoundItem');  // Navigate to found item report screen
+    navigation.navigate('ReportFoundItem');
   };
 
   const handleLogout = () => {
@@ -33,13 +32,21 @@ const HomePage = ({ navigation, route }) => {
           text: 'Logout',
           onPress: () => {
             // Add any logout logic here (clear tokens etc)
-            navigation.replace('Login');  // Navigate back to login
+            navigation.replace('Login');
           }
         }
       ]
     );
   };
 
+  const handleProfile = () => {
+    navigation.navigate('ProfileScreen', {
+      avatar: 'https://example.com/avatar.jpg',
+      name: 'John Doe',
+      emails: [{ email: 'john.doe@example.com', id: 1, name: 'Work' }],
+      address: { city: 'New York', country: 'USA' },
+    });
+  };
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -54,7 +61,7 @@ const HomePage = ({ navigation, route }) => {
       <View style={styles.mainContent}>
         {/* Logo */}
         <Image
-          source={require('../assets/logo.jpeg')}  // Make sure to adjust the path
+          source={require('../assets/logo.jpeg')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -102,7 +109,7 @@ const HomePage = ({ navigation, route }) => {
 
         <TouchableOpacity 
           style={styles.navItem}
-          onPress={() => navigation.navigate('Profile')}
+          onPress={handleProfile}
         >
           <Icon name="person" size={24} color="#666" />
           <Text style={styles.navText}>Profile</Text>

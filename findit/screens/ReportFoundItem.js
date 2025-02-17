@@ -7,7 +7,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { API_URL } from '@env';
 
 const ReportFoundItem = () => {
   const [contact, setContact] = useState('');
