@@ -1,72 +1,33 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: [true, 'Name is required'],
-        trim: true
-    },
-    email: {
-        type: String,
-        required: [true, 'Email is required'],
-        unique: true,
-        trim: true,
-        lowercase: true,
-        match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email']
-    },
-    mobile: {
-        type: String,
-        required: [true, 'Mobile number is required'],
-        trim: true
-    },
-    password: {
-        type: String,
-        required: [true, 'Password is required'],
-        minlength: [6, 'Password should be at least 6 characters']
-    },
-    profileImage: {
-        type: Buffer,
-        required: [true, 'Profile image is required']
-    },
-    profileImageType: {
-        type: String,
-        required: true
-    }
+  name: {
+    type: String,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  mobile: {
+    type: String,
+    required: true,
+  },
+  password: {
+    type: String,
+    required: true,
+  },
+  profileImage: {
+    type: Buffer, // Store image as buffer
+  },
+  profileImageType: {
+    type: String, // Store MIME type of image (e.g., 'image/jpeg')
+  },
 }, {
-    timestamps: true
+  timestamps: true,
 });
 
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-    if (!this.isModified('password')) return next();
-    
-    try {
-        const salt = await bcrypt.genSalt(10);
-        this.password = await bcrypt.hash(this.password, salt);
-        next();
-    } catch (error) {
-        next(error);
-    }
-});
+const User = mongoose.model('User', userSchema);
 
-// Method to check password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-    try {
-        return await bcrypt.compare(candidatePassword, this.password);
-    } catch (error) {
-        throw error;
-    }
-};
-
-// Virtual property to get profile image URL
-userSchema.virtual('profileImageUrl').get(function() {
-    if (this.profileImage && this.profileImageType) {
-        return `data:${this.profileImageType};base64,${this.profileImage.toString('base64')}`;
-    }
-    return null;
-});
-
-const User = mongoose.model('userInfo', userSchema);
-
-export default User;
+export { User };  // This is how you export the User model using ES Module syntax

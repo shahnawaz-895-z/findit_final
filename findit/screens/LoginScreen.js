@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -29,17 +30,28 @@ const LoginScreen = ({ navigation }) => {
       });
 
       const data = await response.json();
+      console.log('Login response:', data); // Add debug log
 
-      if (response.status === 200) {
+      if (data.user) {
+        // Process the profile image if it exists
+        let userData = data.user;
+        if (userData.profileImage) {
+          // Add data URL prefix if not present
+          if (!userData.profileImage.startsWith('data:')) {
+            userData.profileImage = `data:${userData.profileImageType || 'image/jpeg'};base64,${userData.profileImage}`;
+          }
+        }
+
+        // Store user data in AsyncStorage
+        await AsyncStorage.setItem('user', JSON.stringify(userData));
         Alert.alert('Success', 'Login successful');
-        // Navigate to the HomePage
-        navigation.navigate('HomePage'); // Changed 'homepage' to 'HomePage'
+        navigation.replace('HomePage');
       } else {
-        Alert.alert('Error', data.message || 'Login failed');
+        Alert.alert('Error', data.message || 'Invalid credentials');
       }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert('Error', 'Network error. Please check your connection.');
     }
   };
 
