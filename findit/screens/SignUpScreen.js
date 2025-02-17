@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-
-import { 
-    View, 
-    Text, 
-    TextInput, 
-    TouchableOpacity, 
-    StyleSheet, 
+import {
+    View,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    StyleSheet,
     Alert,
     SafeAreaView,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Image
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 const SignUpScreen = ({ navigation }) => {
     const [name, setName] = useState('');
@@ -18,35 +19,75 @@ const SignUpScreen = ({ navigation }) => {
     const [contact, setContact] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [profileImage, setProfileImage] = useState(null);
+
+    const pickImage = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'Please grant permission to access your photos');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+        });
+
+        if (!result.canceled) {
+            setProfileImage(result.assets[0]);
+        }
+    };
 
     const handleSignUp = async () => {
         try {
-            if (!name || !email || !contact || !password || !confirmPassword) {
-                Alert.alert('Error', 'All fields are required');
+            if (!name || !email || !contact || !password || !confirmPassword || !profileImage) {
+                Alert.alert('Error', 'All fields including profile image are required');
                 return;
             }
-
+    
             if (password !== confirmPassword) {
                 Alert.alert('Error', 'Passwords do not match');
                 return;
             }
-
-            console.log('Sending registration request');
-            const response = await fetch(`${API_URL}/register`, {
+    
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('email', email);
+            formData.append('mobile', contact);
+            formData.append('password', password);
+            
+            // Append image
+            const imageUri = profileImage.uri;
+            const filename = imageUri.split('/').pop();
+            const match = /\.(\w+)$/.exec(filename);
+            const type = match ? `image/${match[1]}` : 'image';
+            
+            formData.append('profileImage', {
+                uri: imageUri,
+                name: filename,
+                type
+            });
+    
+            // Log the form data to check what's being sent
+            console.log('Form Data:', Object.fromEntries(formData._parts));
+    
+            const response = await fetch(`http://192.168.18.18:5000/register`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Content-Type': 'multipart/form-data',
                 },
-                body: JSON.stringify({
-                    name,
-                    email,
-                    mobile: contact,
-                    password,
-                }),
+                body: formData,
             });
-
+    
+            // Log the raw response
+            console.log('Raw response:', response);
+            
             const data = await response.json();
-            console.log('Registration response:', data);
+            console.log('Response data:', data);
             
             if (data.status === 'success') {
                 Alert.alert(
@@ -76,6 +117,22 @@ const SignUpScreen = ({ navigation }) => {
             >
                 <View style={styles.formContainer}>
                     <Text style={styles.title}>Sign Up</Text>
+
+                    <TouchableOpacity 
+                        style={styles.imageContainer} 
+                        onPress={pickImage}
+                    >
+                        {profileImage ? (
+                            <Image 
+                                source={{ uri: profileImage.uri }} 
+                                style={styles.profileImage} 
+                            />
+                        ) : (
+                            <View style={styles.placeholderImage}>
+                                <Text>Tap to add profile photo</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
 
                     <TextInput
                         style={styles.input}
@@ -152,6 +209,25 @@ const styles = StyleSheet.create({
         marginBottom: 30,
         textAlign: 'center',
         color: '#3b0b40',
+    },
+    imageContainer: {
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    profileImage: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+    },
+    placeholderImage: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: '#f0f0f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#ddd',
     },
     input: {
         borderWidth: 1,

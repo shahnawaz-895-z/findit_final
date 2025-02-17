@@ -12,7 +12,7 @@ import { Picker } from '@react-native-picker/picker'; // Correct import for Pick
 import { Ionicons } from '@expo/vector-icons';
 import Voice from '@react-native-voice/voice';
 
-const lostitemreporting = ({ navigation }) => {
+const LostItemReporting = ({ navigation }) => {
   const [category, setCategory] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState({});
   const [description, setDescription] = useState('');
@@ -230,4 +230,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default lostitemreporting;
+export default LostItemReporting;

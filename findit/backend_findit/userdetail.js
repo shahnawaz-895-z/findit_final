@@ -2,31 +2,39 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 
 const userSchema = new mongoose.Schema({
-    name: { 
-        type: String, 
+    name: {
+        type: String,
         required: [true, 'Name is required'],
         trim: true
     },
-    email: { 
-        type: String, 
+    email: {
+        type: String,
         required: [true, 'Email is required'],
         unique: true,
         trim: true,
         lowercase: true,
         match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email']
     },
-    mobile: { 
-        type: String, 
+    mobile: {
+        type: String,
         required: [true, 'Mobile number is required'],
         trim: true
     },
-    password: { 
-        type: String, 
+    password: {
+        type: String,
         required: [true, 'Password is required'],
         minlength: [6, 'Password should be at least 6 characters']
+    },
+    profileImage: {
+        type: Buffer,
+        required: [true, 'Profile image is required']
+    },
+    profileImageType: {
+        type: String,
+        required: true
     }
-}, { 
-    timestamps: true 
+}, {
+    timestamps: true
 });
 
 // Hash password before saving
@@ -50,6 +58,14 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
         throw error;
     }
 };
+
+// Virtual property to get profile image URL
+userSchema.virtual('profileImageUrl').get(function() {
+    if (this.profileImage && this.profileImageType) {
+        return `data:${this.profileImageType};base64,${this.profileImage.toString('base64')}`;
+    }
+    return null;
+});
 
 const User = mongoose.model('userInfo', userSchema);
 
