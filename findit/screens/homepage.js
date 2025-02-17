@@ -1,18 +1,16 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Image, 
   SafeAreaView,
-  Alert
+  Alert 
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
-const HomePage = ({ route, navigation }) => {
-  const user = route.params?.user; // Ensure user data is received
-
+const HomePage = ({ navigation }) => {
   const handleReportLostItem = () => {
     navigation.navigate('ReportLostItem');
   };
@@ -33,6 +31,7 @@ const HomePage = ({ route, navigation }) => {
         {
           text: 'Logout',
           onPress: () => {
+            // Add any logout logic here (clear tokens etc)
             navigation.replace('Login');
           }
         }
@@ -40,33 +39,35 @@ const HomePage = ({ route, navigation }) => {
     );
   };
 
+  const handleProfile = () => {
+    navigation.navigate('ProfileScreen', {
+      avatar: 'https://example.com/avatar.jpg',
+      name: 'John Doe',
+      emails: [{ email: 'john.doe@example.com', id: 1, name: 'Work' }],
+      address: { city: 'New York', country: 'USA' },
+    });
+  };
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      {user.profileImageUrl && (
-        <Image
-          source={{ uri: user.profileImageUrl }}
-          style={styles.profileImage}
-        />
-      )}
-      <Text style={styles.welcomeText}>Welcome, {user.name}!</Text>
-      
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Lost & Found</Text>
-        <TouchableOpacity onPress={() => navigation.replace('Login')}>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
           <Icon name="log-out-outline" size={24} color="#3d0c45" />
         </TouchableOpacity>
       </View>
 
       {/* Main Content */}
       <View style={styles.mainContent}>
+        {/* Logo */}
         <Image
           source={require('../assets/logo.jpeg')}
           style={styles.logo}
           resizeMode="contain"
         />
 
-        <TouchableOpacity
+        {/* Main Buttons */}
+        <TouchableOpacity 
           style={styles.button}
           onPress={handleReportLostItem}
         >
@@ -74,7 +75,7 @@ const HomePage = ({ route, navigation }) => {
           <Text style={styles.buttonText}>REPORT LOST ITEM</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.button}
           onPress={handleReportFoundItem}
         >
@@ -85,20 +86,20 @@ const HomePage = ({ route, navigation }) => {
 
       {/* Bottom Navigation */}
       <View style={styles.navbar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => { }}>
+        <TouchableOpacity style={styles.navItem} onPress={() => {}}>
           <Icon name="home" size={24} color="#3d0c45" />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
+        <TouchableOpacity 
+          style={styles.navItem} 
           onPress={() => navigation.navigate('Search')}
         >
           <Icon name="search" size={24} color="#666" />
           <Text style={styles.navText}>Search</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.navItem}
           onPress={() => navigation.navigate('Messages')}
         >
@@ -106,15 +107,18 @@ const HomePage = ({ route, navigation }) => {
           <Text style={styles.navText}>Messages</Text>
         </TouchableOpacity>
 
-        {/* Navigate to Profile and Pass User Data */}
-        <TouchableOpacity onPress={() => navigation.navigate('ProfileScreen', { user })}>
-          <Icon name="person" size={30} color="black" />
-          <Text>Profile</Text>
+        <TouchableOpacity 
+          style={styles.navItem}
+          onPress={handleProfile}
+        >
+          <Icon name="person" size={24} color="#666" />
+          <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -189,4 +193,3 @@ const styles = StyleSheet.create({
 });
 
 export default HomePage;
-
