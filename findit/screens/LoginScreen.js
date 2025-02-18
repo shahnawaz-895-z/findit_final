@@ -16,8 +16,6 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setIsLoading(true);
-      console.log('Sending login request with:', { email, password: '****' });
-      
       const response = await fetch('http://192.168.18.18:5000/login', {
         method: 'POST',
         headers: {
@@ -27,38 +25,26 @@ const LoginScreen = ({ navigation }) => {
         body: JSON.stringify({ email, password }),
       });
 
-      console.log('Login Response Status:', response.status);
       const responseText = await response.text();
-      console.log('Raw Response:', responseText);
-      
-      // Try to parse the JSON response, but handle potential errors
       let data;
       try {
         data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Error parsing JSON response:', parseError);
+      } catch {
         Alert.alert('Error', 'Received invalid response from server');
         return;
       }
-      
-      console.log('Parsed Response:', data);
 
       if (response.status === 200 && data.user) {
-        // Save user data to AsyncStorage
         await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-        
         Alert.alert('Success', 'Login successful');
         navigation.reset({
           index: 0,
           routes: [{ name: 'HomePage' }],
         });
       } else {
-        // Handle different error scenarios
-        const errorMessage = data.message || 'Invalid credentials';
-        Alert.alert('Login Failed', errorMessage);
+        Alert.alert('Login Failed', data.message || 'Invalid credentials');
       }
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch {
       Alert.alert('Network Error', 'Unable to connect to the server. Please check your internet connection.');
     } finally {
       setIsLoading(false);
@@ -68,7 +54,6 @@ const LoginScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign in</Text>
-
       <View style={styles.inputContainer}>
         <Icon name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
         <TextInput
@@ -80,7 +65,6 @@ const LoginScreen = ({ navigation }) => {
           autoCapitalize="none"
         />
       </View>
-
       <View style={styles.inputContainer}>
         <Icon name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
         <TextInput
@@ -91,11 +75,9 @@ const LoginScreen = ({ navigation }) => {
           secureTextEntry
         />
       </View>
-
       <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={styles.forgotPassword}>Forgot password?</Text>
       </TouchableOpacity>
-
       <TouchableOpacity 
         style={[styles.signInButton, isLoading && styles.disabledButton]} 
         onPress={handleLogin}
@@ -107,14 +89,12 @@ const LoginScreen = ({ navigation }) => {
           <Text style={styles.signInButtonText}>SIGN IN</Text>
         )}
       </TouchableOpacity>
-
       <View style={styles.signupContainer}>
         <Text style={styles.signupText}>Don't Have An Account?</Text>
         <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
           <Text style={styles.signupLink}>Sign Up</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.socialIconsContainer}>
         <Icon name="logo-facebook" size={35} color="blue" style={styles.socialIcon} />
         <Icon name="logo-twitter" size={35} color="#1DA1F2" style={styles.socialIcon} />

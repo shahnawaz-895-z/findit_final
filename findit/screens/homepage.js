@@ -1,12 +1,12 @@
 import React from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Image, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
   SafeAreaView,
-  Alert 
+  Alert
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
@@ -67,7 +67,7 @@ const HomePage = ({ navigation }) => {
         />
 
         {/* Main Buttons */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.button}
           onPress={handleReportLostItem}
         >
@@ -75,7 +75,7 @@ const HomePage = ({ navigation }) => {
           <Text style={styles.buttonText}>REPORT LOST ITEM</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.button}
           onPress={handleReportFoundItem}
         >
@@ -86,28 +86,27 @@ const HomePage = ({ navigation }) => {
 
       {/* Bottom Navigation */}
       <View style={styles.navbar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => {}}>
+        <TouchableOpacity style={styles.navItem} onPress={() => { }}>
           <Icon name="home" size={24} color="#3d0c45" />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.navItem} 
+        <TouchableOpacity
+          style={styles.navItem}
           onPress={() => navigation.navigate('Search')}
         >
           <Icon name="search" size={24} color="#666" />
           <Text style={styles.navText}>Search</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Messages')}
-        >
-          <Icon name="chatbubble-ellipses" size={24} color="#666" />
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('ChatScreen')}>
+          <Icon name="chatbubble-ellipses" size={24} color="#3d0c45" />
           <Text style={styles.navText}>Messages</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+
+
+        <TouchableOpacity
           style={styles.navItem}
           onPress={handleProfile}
         >

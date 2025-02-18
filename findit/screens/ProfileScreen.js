@@ -145,7 +145,7 @@ const ProfileScreen = ({ navigation }) => {
       }
 
       // Log the complete FormData
-      console.log('Complete FormData:', [...formData]);
+      //console.log('Complete FormData:', [...formData]);
 
       // Log the request URL
       const requestUrl = `${SERVER_URL}/profile/${userData._id}`;
