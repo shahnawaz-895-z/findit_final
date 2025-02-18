@@ -1,18 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isValidEmail, setIsValidEmail] = useState(false);
-
-  const validateEmail = (text) => {
-    setEmail(text);
-    const emailRegex = /\S+@\S+\.\S+/;
-    setIsValidEmail(emailRegex.test(text));
-  };
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -21,37 +15,53 @@ const LoginScreen = ({ navigation }) => {
     }
 
     try {
-      const response = await fetch(`http://192.168.18.18:5000/login`, {
+      setIsLoading(true);
+      console.log('Sending login request with:', { email, password: '****' });
+      
+      const response = await fetch('http://192.168.18.18:5000/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
-      console.log('Login response:', data); // Add debug log
+      console.log('Login Response Status:', response.status);
+      const responseText = await response.text();
+      console.log('Raw Response:', responseText);
+      
+      // Try to parse the JSON response, but handle potential errors
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError);
+        Alert.alert('Error', 'Received invalid response from server');
+        return;
+      }
+      
+      console.log('Parsed Response:', data);
 
-      if (data.user) {
-        // Process the profile image if it exists
-        let userData = data.user;
-        if (userData.profileImage) {
-          // Add data URL prefix if not present
-          if (!userData.profileImage.startsWith('data:')) {
-            userData.profileImage = `data:${userData.profileImageType || 'image/jpeg'};base64,${userData.profileImage}`;
-          }
-        }
-
-        // Store user data in AsyncStorage
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
+      if (response.status === 200 && data.user) {
+        // Save user data to AsyncStorage
+        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+        
         Alert.alert('Success', 'Login successful');
-        navigation.replace('HomePage');
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'HomePage' }],
+        });
       } else {
-        Alert.alert('Error', data.message || 'Invalid credentials');
+        // Handle different error scenarios
+        const errorMessage = data.message || 'Invalid credentials';
+        Alert.alert('Login Failed', errorMessage);
       }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'Network error. Please check your connection.');
+      Alert.alert('Network Error', 'Unable to connect to the server. Please check your internet connection.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -59,28 +69,43 @@ const LoginScreen = ({ navigation }) => {
     <View style={styles.container}>
       <Text style={styles.title}>Sign in</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={validateEmail}
-        keyboardType="email-address"
-      />
+      <View style={styles.inputContainer}>
+        <Icon name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={(text) => setPassword(text)}
-        secureTextEntry
-      />
+      <View style={styles.inputContainer}>
+        <Icon name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+      </View>
 
       <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
         <Text style={styles.forgotPassword}>Forgot password?</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.signInButton} onPress={handleLogin}>
-        <Text style={styles.signInButtonText}>SIGN IN</Text>
+      <TouchableOpacity 
+        style={[styles.signInButton, isLoading && styles.disabledButton]} 
+        onPress={handleLogin}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.signInButtonText}>SIGN IN</Text>
+        )}
       </TouchableOpacity>
 
       <View style={styles.signupContainer}>
@@ -109,20 +134,30 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 30,
     textAlign: 'center',
+    color: '#3b0b40',
   },
-  input: {
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ccc',
-    padding: 10,
-    marginBottom: 15,
     borderRadius: 50,
-    paddingLeft: 40,
+    marginBottom: 15,
+    paddingHorizontal: 10,
+  },
+  inputIcon: {
+    marginRight: 10,
+    paddingLeft: 5,
+  },
+  input: {
+    flex: 1,
+    padding: 10,
     fontSize: 16,
   },
   forgotPassword: {
-    color: 'red',
+    color: '#3b0b40',
     textAlign: 'right',
     marginBottom: 20,
   },
@@ -132,6 +167,9 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: 'center',
     marginBottom: 20,
+  },
+  disabledButton: {
+    backgroundColor: '#9a8a9a',
   },
   signInButtonText: {
     color: '#fff',
@@ -144,11 +182,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   signupText: {
-    color: '#000',
+    color: '#333',
   },
   signupLink: {
-    color: 'red',
+    color: '#3b0b40',
     marginLeft: 5,
+    fontWeight: 'bold',
   },
   socialIconsContainer: {
     flexDirection: 'row',
