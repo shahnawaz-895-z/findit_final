@@ -29,7 +29,7 @@ app.use(express.json());
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage(); // Use memory storage instead of disk storage
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     limits: {
         fileSize: 5 * 1024 * 1024 // 5MB limit
@@ -105,16 +105,16 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
         if (!password) missingFields.push('password');
 
         if (missingFields.length > 0) {
-            return res.status(400).json({ 
-                status: 'error', 
-                message: `Missing required fields: ${missingFields.join(', ')}` 
+            return res.status(400).json({
+                status: 'error',
+                message: `Missing required fields: ${missingFields.join(', ')}`
             });
         }
 
         // Validate and process profile image
         let profileImage = null;
         let profileImageType = null;
-        
+
         if (req.file) {
             try {
                 // Validate file size (max 5MB)
@@ -124,7 +124,7 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
                         message: 'Image file too large (max 5MB allowed)'
                     });
                 }
-                
+
                 // Validate MIME type
                 const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic'];
                 if (!allowedTypes.includes(req.file.mimetype)) {
@@ -133,27 +133,27 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
                         message: 'Invalid image format. Allowed formats: JPEG, PNG, GIF, WebP, HEIC'
                     });
                 }
-                
+
                 // Convert image buffer to base64
                 profileImage = req.file.buffer.toString('base64');
-                
+
                 // Clean the base64 string
                 profileImage = profileImage.replace(/[\s\r\n]+/g, '');
-                
+
                 // Validate base64 format with more permissive regex
                 if (!profileImage.match(/^[A-Za-z0-9+/]+=*$/)) {
-                    return res.status(400).json({ 
-                        status: 'error', 
-                        message: 'Invalid image data format' 
+                    return res.status(400).json({
+                        status: 'error',
+                        message: 'Invalid image data format'
                     });
                 }
-                
+
                 profileImageType = req.file.mimetype;
             } catch (error) {
                 console.error('Error processing profile image:', error);
-                return res.status(400).json({ 
-                    status: 'error', 
-                    message: 'Error processing profile image' 
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Error processing profile image'
                 });
             }
         } else {
@@ -165,9 +165,9 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            return res.status(409).json({ 
-                status: 'error', 
-                message: 'User already exists with this email' 
+            return res.status(409).json({
+                status: 'error',
+                message: 'User already exists with this email'
             });
         }
 
@@ -181,17 +181,17 @@ app.post('/register', upload.single('profileImage'), async (req, res) => {
         });
 
         await newUser.save();
-        
-        res.status(201).json({ 
-            status: 'success', 
-            message: 'User registered successfully' 
+
+        res.status(201).json({
+            status: 'success',
+            message: 'User registered successfully'
         });
     } catch (error) {
         console.error('Registration error:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Server error during registration', 
-            details: error.message 
+        res.status(500).json({
+            status: 'error',
+            message: 'Server error during registration',
+            details: error.message
         });
     }
 });
@@ -202,7 +202,7 @@ app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
-        
+
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -210,7 +210,7 @@ app.post('/login', async (req, res) => {
         // Process and validate the profile image
         let profileImage = null;
         let profileImageType = user.profileImageType || 'image/jpeg';
-        
+
         try {
             if (user.profileImage) {
                 // Handle Buffer or string
@@ -219,14 +219,14 @@ app.post('/login', async (req, res) => {
                 } else if (typeof user.profileImage === 'string') {
                     profileImage = user.profileImage;
                 }
-                
+
                 // Clean the base64 string
                 if (profileImage) {
                     // Remove any existing data URL prefix if present
                     profileImage = profileImage.replace(/^data:image\/[a-z]+;base64,/, '');
                     // Remove any whitespace or invalid characters
                     profileImage = profileImage.replace(/[\s\r\n]+/g, '');
-                    
+
                     // Validate base64 format
                     if (!profileImage.match(/^[A-Za-z0-9+/]+=*$/)) {
                         console.warn('Invalid base64 format detected, clearing profile image');
@@ -248,12 +248,12 @@ app.post('/login', async (req, res) => {
             profileImage: profileImage,
             profileImageType: profileImageType
         };
-        
+
         console.log('Login successful. Profile image length:', profileImage?.length);
 
-        res.status(200).json({ 
-            message: 'Login successful', 
-            user: userResponse 
+        res.status(200).json({
+            message: 'Login successful',
+            user: userResponse
         });
     } catch (error) {
         console.error('Login error:', error);
@@ -306,30 +306,92 @@ const uploadMiddleware = multer({ storage: upload });
 // **Use the existing 'upload' instead of declaring a new one**
 app.put('/profile/:userId', upload.single('profileImage'), async (req, res) => {
     try {
+        console.log('Received profile update request');
+        console.log('Request body:', req.body);
+        console.log('File:', req.file);
+        
+        const { userId } = req.params;
         const { name, email, mobile } = req.body;
-        let updateData = { name, email, mobile };
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            console.log('Invalid user ID:', userId);
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid user ID format'
+            });
+        }
+
+        const existingUser = await User.findById(userId);
+        if (!existingUser) {
+            console.log('User not found:', userId);
+            return res.status(404).json({
+                status: 'error',
+                message: 'User not found'
+            });
+        }
+
+        // Handle profile image update
+        let profileImage = existingUser.profileImage;
+        let profileImageType = existingUser.profileImageType;
 
         if (req.file) {
-            updateData.profileImage = req.file.buffer.toString('base64');
-            updateData.profileImageType = req.file.mimetype;
+            console.log('Processing new profile image');
+            try {
+                profileImage = req.file.buffer.toString('base64');
+                profileImageType = req.file.mimetype;
+                console.log('Image processed successfully');
+            } catch (error) {
+                console.error('Error processing image:', error);
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Error processing profile image'
+                });
+            }
         }
 
-        const updatedUser = await User.findByIdAndUpdate(req.params.userId, updateData, { new: true });
-        if (!updatedUser) {
-            return res.status(404).json({ status: 'error', message: 'User not found' });
-        }
+        // Update user data
+        const updateData = {
+            name: name || existingUser.name,
+            email: email || existingUser.email,
+            mobile: mobile || existingUser.mobile,
+            profileImage,
+            profileImageType
+        };
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: 'Profile updated successfully', 
-            user: updatedUser 
+        console.log('Updating user with data:', {
+            ...updateData,
+            profileImage: updateData.profileImage ? 'base64_string' : null
+        });
+
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        );
+
+        console.log('User updated successfully');
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Profile updated successfully',
+            user: {
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                mobile: updatedUser.mobile,
+                profileImage: updatedUser.profileImage,
+                profileImageType: updatedUser.profileImageType
+            }
         });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Server error updating profile', details: error.message });
+        console.error('Profile update error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Server error updating profile',
+            details: error.message
+        });
     }
 });
-
-
 // **Report Found Item**
 app.post('/reportfound', upload.single('photo'), async (req, res) => {
     try {
