@@ -24,6 +24,7 @@ const SignUpScreen = ({ navigation }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [profileImage, setProfileImage] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [isFormSubmitted, setIsFormSubmitted] = useState(false);
 
     const pickImage = async () => {
         try {
@@ -40,18 +41,13 @@ const SignUpScreen = ({ navigation }) => {
                 aspect: [1, 1],
                 quality: 0.5,
                 allowsMultipleSelection: false,
-                // Support common image formats
-                exif: false, // Don't need EXIF data
+                exif: false,
             });
 
             if (!result.canceled) {
-                // Process selected image
                 const selectedImage = result.assets[0];
-                
-                // Get file info to validate size and type
                 const fileInfo = await FileSystem.getInfoAsync(selectedImage.uri);
                 
-                // Validate image file size (5MB max)
                 if (fileInfo.size > 5 * 1024 * 1024) {
                     Alert.alert('Image too large', 'Please select an image smaller than 5MB');
                     return;
@@ -66,25 +62,34 @@ const SignUpScreen = ({ navigation }) => {
     };
 
     const handleSignUp = async () => {
+        // Prevent duplicate submissions
+        if (isUploading || isFormSubmitted) {
+            return;
+        }
+        
         try {
             setIsUploading(true);
+            setIsFormSubmitted(true);
             
             // Validate inputs
             if (!name || !email || !contact || !password || !confirmPassword) {
                 Alert.alert('Error', 'All fields are required');
                 setIsUploading(false);
+                setIsFormSubmitted(false);
                 return;
             }
             
             if (!profileImage) {
                 Alert.alert('Error', 'Please select a profile image');
                 setIsUploading(false);
+                setIsFormSubmitted(false);
                 return;
             }
     
             if (password !== confirmPassword) {
                 Alert.alert('Error', 'Passwords do not match');
                 setIsUploading(false);
+                setIsFormSubmitted(false);
                 return;
             }
     
@@ -94,12 +99,11 @@ const SignUpScreen = ({ navigation }) => {
             formData.append('mobile', contact);
             formData.append('password', password);
             
-            // Process and append image with proper type detection
+            // Process and append image
             const imageUri = profileImage.uri;
             const filename = imageUri.split('/').pop();
             const match = /\.(\w+)$/.exec(filename?.toLowerCase());
             
-            // Determine MIME type based on file extension
             let type;
             if (match) {
                 switch (match[1]) {
@@ -120,10 +124,9 @@ const SignUpScreen = ({ navigation }) => {
                         type = 'image/heic';
                         break;
                     default:
-                        type = 'image/jpeg';  // Default fallback
+                        type = 'image/jpeg';
                 }
             } else {
-                // If extension can't be determined, use default or detected type
                 type = profileImage.type || 'image/jpeg';
             }
             
@@ -133,10 +136,9 @@ const SignUpScreen = ({ navigation }) => {
                 type
             });
     
-            // Log the form data to check what's being sent
-            console.log('Form Data:', Object.fromEntries(formData._parts));
-    
-            const response = await fetch(`http://192.168.18.18:5000/register`, {
+            console.log('Sending registration request...');
+            
+            const response = await fetch('http://192.168.18.18:5000/register', {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
@@ -145,13 +147,7 @@ const SignUpScreen = ({ navigation }) => {
                 body: formData,
             });
     
-            // Log the raw response
-            console.log('Raw response status:', response.status);
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-            }
+            console.log('Response status:', response.status);
             
             const data = await response.json();
             console.log('Response data:', data);
@@ -175,6 +171,7 @@ const SignUpScreen = ({ navigation }) => {
             Alert.alert('Error', 'Network request failed: ' + error.message);
         } finally {
             setIsUploading(false);
+            setIsFormSubmitted(false);
         }
     };
 
@@ -184,7 +181,7 @@ const SignUpScreen = ({ navigation }) => {
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={styles.container}
             >
-                <ScrollView>
+                <ScrollView contentContainerStyle={styles.scrollContainer}>
                     <View style={styles.formContainer}>
                         <Text style={styles.title}>Sign Up</Text>
 
@@ -251,9 +248,9 @@ const SignUpScreen = ({ navigation }) => {
                         />
 
                         <TouchableOpacity 
-                            style={[styles.signUpButton, isUploading && styles.disabledButton]} 
+                            style={[styles.signUpButton, (isUploading || isFormSubmitted) && styles.disabledButton]} 
                             onPress={handleSignUp}
-                            disabled={isUploading}
+                            disabled={isUploading || isFormSubmitted}
                         >
                             {isUploading ? (
                                 <ActivityIndicator size="small" color="#fff" />
@@ -279,6 +276,10 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#fff',
+    },
+    scrollContainer: {
+        flexGrow: 1,
+        justifyContent: 'center',
     },
     formContainer: {
         flex: 1,
