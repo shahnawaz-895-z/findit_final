@@ -12,6 +12,7 @@ import ReportLostItem from './screens/ReportLostItem';
 import ShowFoundItemData from './screens/Showfounditemdata';
 import LostItemReporting from './screens/LostItemReporting.js';
 import ProfileScreen from './screens/ProfileScreen';
+import ChatScreen from './screens/ChatScreen.js';
 
 const Stack = createStackNavigator();
 
@@ -47,6 +48,7 @@ export default function App() {
             name="ProfileScreen" component={ProfileScreen} 
             options={{ headerShown: true, animationEnabled: true, gestureEnabled: true }} 
           />
+          <Stack.Screen name="ChatScreen" component={ChatScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
