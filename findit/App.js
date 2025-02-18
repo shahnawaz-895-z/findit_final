@@ -45,7 +45,7 @@ export default function App() {
           <Stack.Screen name="LostItemReporting" component={LostItemReporting} />
           <Stack.Screen 
             name="ProfileScreen" component={ProfileScreen} 
-            options={{ animationEnabled: true, gestureEnabled: true }} 
+            options={{ headerShown: true, animationEnabled: true, gestureEnabled: true }} 
           />
         </Stack.Navigator>
       </NavigationContainer>
