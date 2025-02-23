@@ -13,6 +13,7 @@ import ShowFoundItemData from './screens/Showfounditemdata';
 import LostItemReporting from './screens/LostItemReporting.js';
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
+import SearchScreen from './screens/SearchScreen.js';
 
 const Stack = createStackNavigator();
 
@@ -49,6 +50,7 @@ export default function App() {
             options={{ headerShown: true, animationEnabled: true, gestureEnabled: true }} 
           />
           <Stack.Screen name="ChatScreen" component={ChatScreen} />
+          <Stack.Screen name="SearchScreen" component={SearchScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
