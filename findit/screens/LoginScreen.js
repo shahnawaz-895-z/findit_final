@@ -10,47 +10,46 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
-      return;
+        Alert.alert('Error', 'Please enter both email and password');
+        return;
     }
 
     try {
-      setIsLoading(true);
-      const response = await fetch('http://192.168.18.18:5000/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        Alert.alert('Error', 'Received invalid response from server');
-        return;
-      }
-
-      if (response.status === 200 && data.user) {
-        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
-        Alert.alert('Success', 'Login successful');
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'HomePage' }],
+        setIsLoading(true);
+        const response = await fetch('http://192.168.18.18:5000/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
         });
-      } else {
-        Alert.alert('Login Failed', data.message || 'Invalid credentials');
-      }
-    } catch {
-      Alert.alert('Network Error', 'Unable to connect to the server. Please check your internet connection.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
+        // First check if response is ok
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({
+                message: 'An error occurred during login'
+            }));
+            throw new Error(errorData.message || 'Login failed');
+        }
+
+        // Try to parse the response as JSON
+        const data = await response.json();
+
+        if (data.user) {
+            await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+            navigation.reset({
+                index: 0,
+                routes: [{ name: 'HomePage' }],
+            });
+        } else {
+            throw new Error('Invalid response format');
+        }
+    } catch (error) {
+        Alert.alert('Error', error.message || 'Failed to login');
+    } finally {
+        setIsLoading(false);
+    }
+};
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign in</Text>

@@ -92,9 +92,7 @@ const HomePage = ({ navigation }) => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('Search')}
-        >
+          style={styles.navItem} onPress={() => navigation.navigate('SearchScreen')}>
           <Icon name="search" size={24} color="#666" />
           <Text style={styles.navText}>Search</Text>
         </TouchableOpacity>
