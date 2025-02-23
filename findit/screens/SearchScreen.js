@@ -16,41 +16,59 @@ const SearchScreen = ({ navigation }) => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [isServerConnected, setIsServerConnected] = useState(true); // Default to true
+    const [isServerConnected, setIsServerConnected] = useState(true);
 
-    const SERVER_URL = 'http://192.168.18.18:5000'; // Updated to match app.js port
+    const SERVER_URL = 'http://192.168.18.18:5000'; // Make sure this matches your server
 
     const testServerConnection = async () => {
         try {
             const response = await fetch(`${SERVER_URL}/api-test`);
-            const data = await response.json();
+
+            // Check if response is OK before trying to parse JSON
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            // Add timeout to fetch request
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Request timeout')), 5000)
+            );
+
+            const data = await Promise.race([
+                response.json(),
+                timeoutPromise
+            ]);
+
             setIsServerConnected(data.status === 'success');
             return data.status === 'success';
         } catch (error) {
-            console.error('Server connection test failed:', error);
+            console.error('Server connection test failed:', error.message);
             setIsServerConnected(false);
             return false;
         }
     };
-
     const fetchUsers = async (query) => {
         try {
             setLoading(true);
             setError(null);
 
             const encodedQuery = encodeURIComponent(query);
-            const response = await fetch(`${SERVER_URL}/search-users?query=${encodedQuery}`, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-            });
+            const response = await fetch(`${SERVER_URL}/search-users?query=${encodedQuery}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
             const data = await response.json();
 
             if (data.status === 'success' && Array.isArray(data.users)) {
-                setUsers(data.users);
+                // Process the users to ensure proper image data
+                const processedUsers = data.users.map(user => ({
+                    ...user,
+                    // Ensure the profileImage is properly formatted
+                    profileImage: user.profileImage || null
+                }));
+                setUsers(processedUsers);
             } else {
                 throw new Error(data.message || 'Invalid response format');
             }
@@ -79,32 +97,41 @@ const SearchScreen = ({ navigation }) => {
         return () => clearTimeout(timeoutId);
     }, [searchQuery]);
 
-    // Rest of your component code remains the same...
-    const renderUserItem = ({ item }) => (
-        <TouchableOpacity
-            style={styles.userItem}
-            onPress={() => navigation.navigate('ChatScreen', { user: item })}
-        >
-            <View style={styles.avatarContainer}>
-                {item.profileImage ? (
-                    <Image
-                        source={{ uri: `data:${item.profileImageType};base64,${item.profileImage}` }}
-                        style={styles.avatar}
-                    />
-                ) : (
-                    <View style={[styles.avatar, styles.placeholderAvatar]}>
-                        <Text style={styles.avatarText}>
-                            {item.name[0].toUpperCase()}
-                        </Text>
-                    </View>
-                )}
-            </View>
-            <View style={styles.userInfo}>
-                <Text style={styles.userName}>{item.name}</Text>
-                <Text style={styles.userEmail}>{item.email}</Text>
-            </View>
-        </TouchableOpacity>
-    );
+    const renderUserItem = ({ item }) => {
+        // Create the image URI only if profileImage exists
+        const imageUri = item.profileImage
+            ? `data:${item.profileImageType};base64,${item.profileImage}`
+            : null;
+
+        console.log('Image URI available:', !!imageUri); // Debug log
+
+        return (
+            <TouchableOpacity
+                style={styles.userItem}
+                onPress={() => navigation.navigate('ChatScreen', { user: item })}
+            >
+                <View style={styles.avatarContainer}>
+                    {imageUri ? (
+                        <Image
+                            source={{ uri: imageUri }}
+                            style={styles.avatar}
+                            onError={(error) => console.error('Image loading error:', error)}
+                        />
+                    ) : (
+                        <View style={[styles.avatar, styles.placeholderAvatar]}>
+                            <Text style={styles.avatarText}>
+                                {item.name[0].toUpperCase()}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+                <View style={styles.userInfo}>
+                    <Text style={styles.userName}>{item.name}</Text>
+                    <Text style={styles.userEmail}>{item.email}</Text>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     if (!isServerConnected) {
         return (
@@ -112,8 +139,8 @@ const SearchScreen = ({ navigation }) => {
                 <Text style={styles.errorText}>
                     Unable to connect to server. Please check your connection and ensure the server is running.
                 </Text>
-                <TouchableOpacity 
-                    style={styles.retryButton} 
+                <TouchableOpacity
+                    style={styles.retryButton}
                     onPress={testServerConnection}
                 >
                     <Text style={styles.retryButtonText}>Retry Connection</Text>
@@ -158,7 +185,6 @@ const SearchScreen = ({ navigation }) => {
     );
 };
 
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -193,6 +219,7 @@ const styles = StyleSheet.create({
         width: 50,
         height: 50,
         borderRadius: 25,
+        backgroundColor: '#f0f0f0', // Fallback color
     },
     placeholderAvatar: {
         backgroundColor: '#3b0b40',
@@ -230,17 +257,6 @@ const styles = StyleSheet.create({
         margin: 20,
         color: '#666',
     },
-    retryButton: {
-        backgroundColor: '#3b0b40',
-        padding: 10,
-        borderRadius: 5,
-        marginTop: 10,
-        alignSelf: 'center',
-    },
-    retryButtonText: {
-        color: '#fff',
-        fontSize: 16,
-    }
 });
 
 export default SearchScreen;
