@@ -394,26 +394,21 @@ app.put('/profile/:userId', upload.single('profileImage'), async (req, res) => {
 });
 // In app.js, update the search-users route:
 
+// In app.js, update the search-users route:
+
 app.get('/search-users', async (req, res) => {
-    console.log('Received search request:', req.query); // Debug log
-
-    // Force JSON content type
-    res.setHeader('Content-Type', 'application/json');
-
     try {
         const { query } = req.query;
         
         if (!query || typeof query !== 'string') {
-            console.log('Invalid query parameter'); // Debug log
-            return res.json({
+            return res.status(400).json({
                 status: 'error',
                 message: 'Search query is required'
             });
         }
 
         if (query.length < 3) {
-            console.log('Query too short'); // Debug log
-            return res.json({
+            return res.status(400).json({
                 status: 'error',
                 message: 'Search query must be at least 3 characters long'
             });
@@ -421,8 +416,6 @@ app.get('/search-users', async (req, res) => {
 
         const searchRegex = new RegExp(query, 'i');
         
-        console.log('Searching with regex:', searchRegex); // Debug log
-
         const users = await User.find({
             $or: [
                 { name: searchRegex },
@@ -430,41 +423,42 @@ app.get('/search-users', async (req, res) => {
             ]
         }).select('name email profileImage profileImageType').lean();
 
-        console.log(`Found ${users.length} users`); // Debug log
+        // Process users to properly include profile images
+        const processedUsers = users.map(user => ({
+            _id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+            profileImage: user.profileImage,  // Send the full base64 string
+            profileImageType: user.profileImageType || 'image/jpeg'
+        }));
 
-        const processedUsers = users.map(user => {
-            // Basic user data without image processing first
-            return {
-                _id: user._id.toString(),
-                name: user.name,
-                email: user.email,
-                profileImage: null, // Temporarily disable image processing
-                profileImageType: user.profileImageType || 'image/jpeg'
-            };
-        });
-
-        const response = {
+        return res.json({
             status: 'success',
             users: processedUsers
-        };
-
-        console.log('Sending response:', { ...response, users: 'filtered' }); // Debug log
-        return res.json(response);
+        });
 
     } catch (error) {
-        console.error('Search error:', error); // Debug log
-        return res.json({
+        console.error('Search error:', error);
+        return res.status(500).json({
             status: 'error',
             message: 'Server error while searching users'
         });
     }
 });
-// Add this in your app.js on the server side
+// Add this near the other routes in app.js
 app.get('/api-test', (req, res) => {
-    res.json({
-        status: 'success',
-        message: 'API is working correctly'
-    });
+    try {
+        res.json({
+            status: 'success',
+            message: 'API is working correctly'
+        });
+    } catch (error) {
+        console.error('API test error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Internal server error'
+        });
+    }
 });
 // **Report Found Item**
 app.post('/reportfound', upload.single('photo'), async (req, res) => {
