@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StatusBar } from 'react-native';
+import { StatusBar, Dimensions } from 'react-native';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
@@ -28,6 +28,19 @@ const screenOptions = {
 };
 
 export default function App() {
+  const [dimensions, setDimensions] = useState({
+    window: Dimensions.get('window'),
+    screen: Dimensions.get('screen'),
+  });
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window, screen }) => {
+      setDimensions({ window, screen });
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavigationContainer>

@@ -7,9 +7,12 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    ActivityIndicator
+    ActivityIndicator,
+    Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+
+const { width, height } = Dimensions.get('window');
 
 const SearchScreen = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -194,20 +197,20 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#f5f5f5',
-        margin: 10,
-        padding: 10,
-        borderRadius: 20,
+        margin: width * 0.025,
+        padding: width * 0.025,
+        borderRadius: width * 0.05,
     },
     searchIcon: {
         marginRight: 10,
     },
     searchInput: {
         flex: 1,
-        fontSize: 16,
+        fontSize: width * 0.04,
     },
     userItem: {
         flexDirection: 'row',
-        padding: 15,
+        padding: width * 0.04,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
         alignItems: 'center',
@@ -216,9 +219,9 @@ const styles = StyleSheet.create({
         marginRight: 15,
     },
     avatar: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        width: width * 0.125,
+        height: width * 0.125,
+        borderRadius: width * 0.0625,
         backgroundColor: '#f0f0f0', // Fallback color
     },
     placeholderAvatar: {
@@ -233,16 +236,17 @@ const styles = StyleSheet.create({
     },
     userInfo: {
         flex: 1,
+        marginLeft: width * 0.03,
     },
     userName: {
-        fontSize: 16,
+        fontSize: width * 0.04,
         fontWeight: 'bold',
         color: '#333',
     },
     userEmail: {
-        fontSize: 14,
+        fontSize: width * 0.035,
         color: '#666',
-        marginTop: 2,
+        marginTop: height * 0.003,
     },
     loader: {
         marginTop: 20,

@@ -1,7 +1,9 @@
 // ForgotPasswordScreen.js
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+
+const { width, height } = Dimensions.get('window');
 
 const ForgotPasswordScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -50,44 +52,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
+    padding: width * 0.05,
     backgroundColor: '#fff',
   },
   backIcon: {
     position: 'absolute',
-    top: 40,
-    left: 20,
+    top: height * 0.05,
+    left: width * 0.05,
   },
   title: {
-    fontSize: 28,
+    fontSize: width * 0.07,
     fontWeight: 'bold',
-    marginBottom: 30,
+    marginBottom: height * 0.04,
     textAlign: 'center',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
-    padding: 10,
-    marginBottom: 20,
-    borderRadius: 50,
-    paddingLeft: 40,
-    fontSize: 16,
+    padding: height * 0.015,
+    marginBottom: height * 0.025,
+    borderRadius: width * 0.12,
+    paddingLeft: width * 0.1,
+    fontSize: width * 0.04,
   },
   icon: {
     position: 'absolute',
-    right: 40,
-    top: 135, // Adjust this based on input position
+    right: width * 0.1,
+    top: height * 0.17,
   },
   sendButton: {
     backgroundColor: '#3b0b40',
-    padding: 15,
-    borderRadius: 30,
+    padding: height * 0.02,
+    borderRadius: width * 0.075,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: height * 0.025,
   },
   sendButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
   },
 });

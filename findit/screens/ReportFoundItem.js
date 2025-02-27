@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, ScrollView, Alert, Platform, Dimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
@@ -7,6 +7,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+
+const { width, height } = Dimensions.get('window');
 
 const ReportFoundItem = () => {
   const [contact, setContact] = useState('');
@@ -186,7 +188,7 @@ const ReportFoundItem = () => {
         <Text style={styles.heading}>Report Found Item</Text>
 
         <View style={styles.inputContainer}>
-          <Ionicons name="time-outline" size={24} color="#4A90E2" style={styles.icon} />
+          <Ionicons name="time-outline" size={24} color="#3d0c45" style={styles.icon} />
           <TouchableOpacity style={styles.input} onPress={() => setShowTimePicker(true)}>
             <Text style={styles.inputText}>
               {time ? time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Select Time'}
@@ -203,7 +205,7 @@ const ReportFoundItem = () => {
         )}
 
         <View style={styles.inputContainer}>
-          <Ionicons name="calendar-outline" size={24} color="#4A90E2" style={styles.icon} />
+          <Ionicons name="calendar-outline" size={24} color="#3d0c45" style={styles.icon} />
           <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
             <Text style={styles.inputText}>
               {date ? date.toLocaleDateString() : 'Select Date'}
@@ -220,17 +222,18 @@ const ReportFoundItem = () => {
         )}
 
         <View style={styles.inputContainer}>
-          <Ionicons name="person-outline" size={24} color="#4A90E2" style={styles.icon} />
+          <Ionicons name="person-outline" size={24} color="#3d0c45" style={styles.icon} />
           <TextInput
             style={styles.input}
             placeholder="Enter Contact Information"
             onChangeText={(text) => setContact(text)}
             value={contact}
+            placeholderTextColor="#666"
           />
         </View>
 
         <View style={styles.inputContainer}>
-          <Ionicons name="location-outline" size={24} color="#4A90E2" style={styles.icon} />
+          <Ionicons name="location-outline" size={24} color="#3d0c45" style={styles.icon} />
           <TouchableOpacity style={styles.input} onPress={() => setMapVisible(!mapVisible)}>
             <Text style={styles.inputText}>
               {location || 'Tap to select location'}
@@ -257,14 +260,19 @@ const ReportFoundItem = () => {
 
         <TouchableOpacity onPress={pickImage} style={styles.pickImageButton}>
           <Ionicons name="camera-outline" size={24} color="#FFFFFF" />
-          <Text style={styles.pickImageText}>Pick Image</Text>
+          <Text style={styles.pickImageText}>Add Photo</Text>
         </TouchableOpacity>
 
-        {photo && <Image source={{ uri: photo }} style={styles.imagePreview} />}
+        {photo && (
+          <View style={styles.imagePreviewContainer}>
+            <Image source={{ uri: photo }} style={styles.imagePreview} />
+          </View>
+        )}
 
         {description && (
           <View style={styles.descriptionContainer}>
-            <Text style={styles.descriptionText}>Description: {description}</Text>
+            <Text style={styles.descriptionLabel}>AI-Generated Description:</Text>
+            <Text style={styles.descriptionText}>{description}</Text>
           </View>
         )}
 
@@ -279,90 +287,129 @@ const ReportFoundItem = () => {
 const styles = StyleSheet.create({
   screenContainer: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#f8f9fa',
   },
   content: {
-    padding: 20,
+    padding: width * 0.05,
   },
   heading: {
-    fontSize: 28,
+    fontSize: width * 0.07,
     fontWeight: 'bold',
-    marginBottom: 24,
+    marginBottom: height * 0.03,
     textAlign: 'center',
-    color: '#2C3E50',
+    color: '#3d0c45',
+    marginTop: height * 0.02,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: height * 0.02,
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: width * 0.03,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(61, 12, 69, 0.1)',
   },
   icon: {
-    marginLeft: 12,
-    marginRight: 8,
+    marginLeft: width * 0.04,
+    marginRight: width * 0.02,
   },
   input: {
     flex: 1,
-    padding: 12,
+    padding: width * 0.04,
+    color: '#333',
+    fontSize: width * 0.04,
   },
   inputText: {
-    color: '#34495E',
-    fontSize: 16,
+    color: '#333',
+    fontSize: width * 0.04,
   },
   map: {
     width: '100%',
-    height: 200,
-    marginBottom: 20,
-    borderRadius: 8,
+    height: height * 0.25,
+    marginBottom: height * 0.025,
+    borderRadius: width * 0.03,
     overflow: 'hidden',
   },
   pickImageButton: {
-    backgroundColor: '#4CAF50',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: '#3d0c45',
+    padding: height * 0.02,
+    borderRadius: width * 0.03,
+    marginVertical: height * 0.02,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   pickImageText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
-    marginLeft: 8,
+    marginLeft: width * 0.02,
+  },
+  imagePreviewContainer: {
+    borderRadius: width * 0.03,
+    overflow: 'hidden',
+    marginBottom: height * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   imagePreview: {
     width: '100%',
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 16,
+    height: height * 0.3,
+    borderRadius: width * 0.03,
   },
   descriptionContainer: {
-    marginTop: 8,
-    padding: 12,
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    marginBottom: 16,
+    padding: width * 0.04,
+    borderRadius: width * 0.03,
+    marginBottom: height * 0.02,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(61, 12, 69, 0.1)',
+  },
+  descriptionLabel: {
+    fontSize: width * 0.04,
+    fontWeight: 'bold',
+    color: '#3d0c45',
+    marginBottom: height * 0.01,
   },
   descriptionText: {
-    fontSize: 16,
-    color: '#34495E',
+    fontSize: width * 0.04,
+    color: '#333',
+    lineHeight: width * 0.06,
   },
   submitButton: {
-    backgroundColor: '#3498DB',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: '#3d0c45',
+    padding: height * 0.02,
+    borderRadius: width * 0.03,
     alignItems: 'center',
+    marginTop: height * 0.02,
+    marginBottom: height * 0.04,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
   },
 });

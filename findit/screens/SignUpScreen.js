@@ -11,10 +11,13 @@ import {
     Platform,
     Image,
     ActivityIndicator,
-    ScrollView
+    ScrollView,
+    Dimensions
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+
+const { width, height } = Dimensions.get('window');
 
 const SignUpScreen = ({ navigation }) => {
     const [name, setName] = useState('');
@@ -284,28 +287,28 @@ const styles = StyleSheet.create({
     formContainer: {
         flex: 1,
         justifyContent: 'center',
-        padding: 20,
+        padding: width * 0.05,
     },
     title: {
-        fontSize: 32,
+        fontSize: width * 0.08,
         fontWeight: 'bold',
-        marginBottom: 30,
+        marginBottom: height * 0.04,
         textAlign: 'center',
         color: '#3b0b40',
     },
     imageContainer: {
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: height * 0.025,
     },
     profileImage: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: width * 0.3,
+        height: width * 0.3,
+        borderRadius: width * 0.15,
     },
     placeholderImage: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: width * 0.3,
+        height: width * 0.3,
+        borderRadius: width * 0.15,
         backgroundColor: '#f0f0f0',
         justifyContent: 'center',
         alignItems: 'center',
@@ -315,25 +318,25 @@ const styles = StyleSheet.create({
     input: {
         borderWidth: 1,
         borderColor: '#ddd',
-        padding: 15,
-        marginBottom: 20,
-        borderRadius: 25,
-        fontSize: 16,
+        padding: height * 0.02,
+        marginBottom: height * 0.02,
+        borderRadius: width * 0.06,
+        fontSize: width * 0.04,
         backgroundColor: '#f8f8f8',
     },
     signUpButton: {
         backgroundColor: '#3b0b40',
-        padding: 15,
-        borderRadius: 25,
+        padding: height * 0.02,
+        borderRadius: width * 0.06,
         alignItems: 'center',
-        marginTop: 10,
+        marginTop: height * 0.015,
     },
     disabledButton: {
         backgroundColor: '#9a8a9a',
     },
     signUpButtonText: {
         color: '#fff',
-        fontSize: 18,
+        fontSize: width * 0.045,
         fontWeight: 'bold',
     },
     signupContainer: {

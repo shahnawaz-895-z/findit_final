@@ -9,10 +9,13 @@ import {
     Modal,
     FlatList,
     Image,
-    StyleSheet
+    StyleSheet,
+    Dimensions
 } from 'react-native';
 import { GiftedChat, Bubble, InputToolbar, Send } from 'react-native-gifted-chat';
 import { Ionicons } from '@expo/vector-icons';
+
+const { width, height } = Dimensions.get('window');
 
 const ChatScreen = ({ route, navigation }) => {
     const [messages, setMessages] = useState([]);
@@ -166,19 +169,19 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
+        padding: width * 0.04,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: width * 0.045,
         fontWeight: 'bold',
-        marginLeft: 15,
+        marginLeft: width * 0.04,
         color: '#3b0b40',
     },
     sendButton: {
-        marginRight: 10,
-        marginBottom: 5,
+        marginRight: width * 0.025,
+        marginBottom: height * 0.006,
     },
     modalContainer: {
         flex: 1,
@@ -187,14 +190,14 @@ const styles = StyleSheet.create({
     searchContainer: {
         flex: 1,
         backgroundColor: '#fff',
-        marginTop: 50,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
+        marginTop: height * 0.06,
+        borderTopLeftRadius: width * 0.05,
+        borderTopRightRadius: width * 0.05,
     },
     searchHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 15,
+        padding: width * 0.04,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
     },
@@ -203,21 +206,21 @@ const styles = StyleSheet.create({
     },
     searchInput: {
         flex: 1,
-        marginLeft: 10,
-        fontSize: 16,
-        padding: 8,
+        marginLeft: width * 0.025,
+        fontSize: width * 0.04,
+        padding: width * 0.02,
     },
     searchItem: {
         flexDirection: 'row',
-        padding: 15,
+        padding: width * 0.04,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
         alignItems: 'center',
     },
     searchAvatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: width * 0.1,
+        height: width * 0.1,
+        borderRadius: width * 0.05,
     },
     placeholderAvatar: {
         backgroundColor: '#3b0b40',
@@ -230,14 +233,14 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     searchItemText: {
-        marginLeft: 15,
+        marginLeft: width * 0.04,
     },
     searchItemName: {
-        fontSize: 16,
+        fontSize: width * 0.04,
         fontWeight: 'bold',
     },
     searchItemEmail: {
-        fontSize: 14,
+        fontSize: width * 0.035,
         color: '#666',
     },
     noResults: {

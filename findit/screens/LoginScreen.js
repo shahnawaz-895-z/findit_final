@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Dimensions } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width, height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -107,13 +109,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
+    padding: width * 0.05,
     backgroundColor: '#fff',
   },
   title: {
-    fontSize: 32,
+    fontSize: width * 0.08,
     fontWeight: 'bold',
-    marginBottom: 30,
+    marginBottom: height * 0.04,
     textAlign: 'center',
     color: '#3b0b40',
   },
@@ -122,9 +124,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 50,
-    marginBottom: 15,
-    paddingHorizontal: 10,
+    borderRadius: width * 0.12,
+    marginBottom: height * 0.02,
+    paddingHorizontal: width * 0.025,
   },
   inputIcon: {
     marginRight: 10,
@@ -132,27 +134,28 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    padding: 10,
-    fontSize: 16,
+    padding: width * 0.025,
+    fontSize: width * 0.04,
   },
   forgotPassword: {
     color: '#3b0b40',
     textAlign: 'right',
-    marginBottom: 20,
+    marginBottom: height * 0.025,
+    fontSize: width * 0.035,
   },
   signInButton: {
     backgroundColor: '#3b0b40',
-    padding: 15,
-    borderRadius: 30,
+    padding: height * 0.02,
+    borderRadius: width * 0.075,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: height * 0.025,
   },
   disabledButton: {
     backgroundColor: '#9a8a9a',
   },
   signInButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
   },
   signupContainer: {

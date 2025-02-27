@@ -8,13 +8,16 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
-  Platform
+  Platform,
+  Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as ImagePicker from 'expo-image-picker';
 
 const SERVER_URL = 'http://192.168.18.18:5000'; // Update with your server URL
+
+const { width, height } = Dimensions.get('window');
 
 const ProfileScreen = ({ navigation }) => {
   const [userData, setUserData] = useState(null);
@@ -302,24 +305,24 @@ const styles = StyleSheet.create({
   },
   profileContainer: {
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 30,
+    paddingTop: height * 0.03,
+    paddingBottom: height * 0.04,
   },
   imageContainer: {
     position: 'relative',
-    width: 120,
-    height: 120,
-    marginBottom: 15,
+    width: width * 0.3,
+    height: width * 0.3,
+    marginBottom: height * 0.02,
   },
   profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: width * 0.3,
+    height: width * 0.3,
+    borderRadius: width * 0.15,
   },
   profileImagePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: width * 0.3,
+    height: width * 0.3,
+    borderRadius: width * 0.15,
     backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
@@ -334,62 +337,62 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 60,
+    borderRadius: width * 0.15,
     justifyContent: 'center',
     alignItems: 'center',
   },
   name: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#3b0b40',
   },
   nameInput: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
     color: '#3b0b40',
     textAlign: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#3b0b40',
-    paddingBottom: 5,
-    minWidth: 200,
+    paddingBottom: height * 0.01,
+    minWidth: width * 0.5,
   },
   infoContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: width * 0.05,
   },
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f8f8f8',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
+    padding: width * 0.04,
+    borderRadius: width * 0.02,
+    marginBottom: height * 0.02,
   },
   infoText: {
-    marginLeft: 15,
-    fontSize: 16,
+    marginLeft: width * 0.04,
+    fontSize: width * 0.04,
     color: '#333',
     flex: 1,
   },
   mobileInput: {
-    marginLeft: 15,
-    fontSize: 16,
+    marginLeft: width * 0.04,
+    fontSize: width * 0.04,
     color: '#333',
     flex: 1,
     borderBottomWidth: 1,
     borderBottomColor: '#3b0b40',
-    paddingBottom: 5,
+    paddingBottom: height * 0.01,
   },
   saveButton: {
     backgroundColor: '#3b0b40',
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
+    marginHorizontal: width * 0.05,
+    paddingVertical: height * 0.02,
+    borderRadius: width * 0.02,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: height * 0.03,
   },
   saveButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
   },
   logoutButton: {
@@ -397,18 +400,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 10,
+    marginHorizontal: width * 0.05,
+    paddingVertical: height * 0.02,
+    borderRadius: width * 0.02,
     marginTop: 'auto',
-    marginBottom: 20,
+    marginBottom: height * 0.03,
   },
   logoutIcon: {
     marginRight: 10,
   },
   logoutText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
   },
 });
