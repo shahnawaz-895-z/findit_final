@@ -6,9 +6,12 @@ import {
   StyleSheet,
   Image,
   SafeAreaView,
-  Alert
+  Alert,
+  Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+
+const { width, height } = Dimensions.get('window');
 
 const HomePage = ({ navigation }) => {
   const handleReportLostItem = () => {
@@ -125,12 +128,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: width * 0.04,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    paddingTop: height * 0.05, // Safe area for notch
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: width * 0.05,
     fontWeight: 'bold',
     color: '#3d0c45',
   },
@@ -141,22 +145,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: width * 0.05,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 40,
+    width: width * 0.5,
+    height: width * 0.5,
+    marginBottom: height * 0.05,
   },
   button: {
     backgroundColor: '#3d0c45',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-    marginBottom: 20,
+    paddingVertical: height * 0.02,
+    paddingHorizontal: width * 0.08,
+    borderRadius: width * 0.08,
+    marginBottom: height * 0.025,
     width: '90%',
     elevation: 3,
   },
@@ -165,7 +169,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: width * 0.04,
     fontWeight: 'bold',
   },
   navbar: {
@@ -173,18 +177,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     backgroundColor: '#fff',
-    paddingVertical: 10,
+    paddingVertical: height * 0.015,
     borderTopWidth: 1,
     borderTopColor: '#eee',
     elevation: 5,
   },
   navItem: {
     alignItems: 'center',
-    padding: 5,
+    padding: width * 0.012,
   },
   navText: {
-    fontSize: 12,
-    marginTop: 4,
+    fontSize: width * 0.03,
+    marginTop: height * 0.005,
     color: '#666',
   },
 });

@@ -7,10 +7,13 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker'; // Correct import for Picker
 import { Ionicons } from '@expo/vector-icons';
 import Voice from '@react-native-voice/voice';
+
+const { width, height } = Dimensions.get('window');
 
 const LostItemReporting = ({ navigation }) => {
   const [category, setCategory] = useState('');
@@ -183,50 +186,50 @@ const LostItemReporting = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
+    padding: width * 0.05,
     backgroundColor: '#fff',
   },
   title: {
-    fontSize: 24,
+    fontSize: width * 0.06,
     fontWeight: 'bold',
+    marginBottom: height * 0.03,
     textAlign: 'center',
-    marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    marginBottom: 8,
+    fontSize: width * 0.04,
+    marginBottom: height * 0.01,
   },
   input: {
-    height: 40,
+    height: height * 0.05,
     borderColor: '#ccc',
     borderWidth: 1,
-    marginBottom: 16,
-    paddingHorizontal: 8,
-    fontSize: 16,
+    marginBottom: height * 0.02,
+    paddingHorizontal: width * 0.02,
+    fontSize: width * 0.04,
   },
   picker: {
-    height: 50,
+    height: height * 0.06,
     width: '100%',
-    marginBottom: 16,
+    marginBottom: height * 0.02,
   },
   voiceButton: {
     alignSelf: 'center',
-    marginVertical: 16,
+    marginVertical: height * 0.02,
   },
   voiceResult: {
-    fontSize: 16,
-    marginBottom: 16,
+    fontSize: width * 0.04,
+    marginBottom: height * 0.02,
     textAlign: 'center',
   },
   submitButton: {
     backgroundColor: '#28a745',
-    paddingVertical: 12,
-    borderRadius: 5,
+    paddingVertical: height * 0.015,
+    borderRadius: width * 0.012,
     alignItems: 'center',
   },
   submitButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: width * 0.045,
   },
 });
 

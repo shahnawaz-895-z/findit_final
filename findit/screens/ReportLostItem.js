@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
@@ -7,6 +7,9 @@ import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
 import { API_URL } from '@env';
+import { Ionicons } from '@expo/vector-icons';
+
+const { width, height } = Dimensions.get('window');
 
 const ReportLostItem = () => {
   const navigation = useNavigation();
@@ -179,94 +182,127 @@ const ReportLostItem = () => {
       <Text style={styles.title}>Report Lost Item</Text>
 
       <TouchableOpacity style={styles.noPictureButton} onPress={handleNoPicture}>
-        <Text style={styles.noPictureButtonText}>No Picture? Report Lost Item</Text>
+        <Ionicons name="document-text-outline" size={24} color="#fff" style={styles.buttonIcon} />
+        <Text style={styles.noPictureButtonText}>Report Without Photo</Text>
       </TouchableOpacity>
 
-      <Text style={styles.label}>Time:</Text>
-      <TouchableOpacity style={styles.input} onPress={() => setShowTimePicker(true)}>
-        <Text>{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-      </TouchableOpacity>
-      {showTimePicker && (
-        <DateTimePicker
-          value={time}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={onChangeTime}
-        />
-      )}
+      <View style={styles.formSection}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Time:</Text>
+          <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker(true)}>
+            <Ionicons name="time-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <Text style={styles.inputText}>
+              {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {showTimePicker && (
+          <DateTimePicker
+            value={time}
+            mode="time"
+            is24Hour={true}
+            display="default"
+            onChange={onChangeTime}
+          />
+        )}
 
-      <Text style={styles.label}>Contact:</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter contact number"
-        keyboardType="numeric"
-        value={contact}
-        onChangeText={setContact}
-      />
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Contact:</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="call-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter contact number"
+              keyboardType="numeric"
+              value={contact}
+              onChangeText={setContact}
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
 
-      <Text style={styles.label}>Category:</Text>
-      <View style={styles.pickerContainer}>
-        <Picker
-          selectedValue={category}
-          onValueChange={(itemValue) => setCategory(itemValue)}
-          style={styles.picker}
-        >
-          <Picker.Item label="Select Category" value="" />
-          {categories.map((item, index) => (
-            <Picker.Item key={index} label={item} value={item} />
-          ))}
-        </Picker>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Category:</Text>
+          <View style={styles.pickerContainer}>
+            <Ionicons name="list-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <Picker
+              selectedValue={category}
+              onValueChange={(itemValue) => setCategory(itemValue)}
+              style={styles.picker}
+            >
+              <Picker.Item label="Select Category" value="" />
+              {categories.map((item, index) => (
+                <Picker.Item key={index} label={item} value={item} />
+              ))}
+            </Picker>
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Date:</Text>
+          <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)}>
+            <Ionicons name="calendar-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <Text style={styles.inputText}>{date.toDateString()}</Text>
+          </TouchableOpacity>
+        </View>
+        {showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="default"
+            onChange={onChangeDate}
+          />
+        )}
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Location:</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="location-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter location"
+              value={location}
+              onChangeText={setLocation}
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Upload Photo:</Text>
+          <TouchableOpacity onPress={pickImage} style={styles.uploadButton}>
+            <Ionicons name="camera-outline" size={24} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.uploadButtonText}>Choose Photo</Text>
+          </TouchableOpacity>
+          {photo && (
+            <View style={styles.imagePreviewContainer}>
+              <Image source={{ uri: photo }} style={styles.image} />
+            </View>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Description:</Text>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="#3d0c45" style={styles.loader} />
+          ) : (
+            <View style={[styles.inputContainer, styles.descriptionContainer]}>
+              <TextInput
+                style={[styles.input, styles.descriptionInput]}
+                placeholder="Enter description"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                editable={!isLoading}
+                placeholderTextColor="#666"
+              />
+            </View>
+          )}
+        </View>
       </View>
 
-      <Text style={styles.label}>Date:</Text>
-      <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
-        <Text>{date.toDateString()}</Text>
-      </TouchableOpacity>
-      {showDatePicker && (
-        <DateTimePicker
-          value={date}
-          mode="date"
-          display="default"
-          onChange={onChangeDate}
-        />
-      )}
-
-      <Text style={styles.label}>Location:</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter location"
-        value={location}
-        onChangeText={setLocation}
-      />
-
-      <Text style={styles.label}>Upload Photo:</Text>
-      <TouchableOpacity onPress={pickImage} style={styles.uploadButton}>
-        <Text style={styles.uploadText}>Upload Photo</Text>
-      </TouchableOpacity>
-      {photo && (
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: photo }} style={styles.image} />
-          <Text style={styles.uploadText}>Photo selected</Text>
-        </View>
-      )}
-
-      <Text style={styles.label}>Description:</Text>
-      {isLoading ? (
-        <ActivityIndicator size="large" color="#4a148c" />
-      ) : (
-        <TextInput
-          style={[styles.input, styles.descriptionInput]}
-          placeholder="Enter description"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          editable={!isLoading}
-        />
-      )}
-
       <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-        <Text style={styles.submitButtonText}>SUBMIT</Text>
+        <Text style={styles.submitButtonText}>SUBMIT REPORT</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -275,87 +311,152 @@ const ReportLostItem = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
   },
   title: {
-    fontSize: 24,
+    fontSize: width * 0.07,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: 20,
+    marginVertical: height * 0.03,
+    color: '#3d0c45',
+  },
+  formSection: {
+    padding: width * 0.05,
+  },
+  inputGroup: {
+    marginBottom: height * 0.025,
   },
   label: {
-    fontSize: 16,
-    marginVertical: 5,
-    fontWeight: 'bold',
+    fontSize: width * 0.04,
+    fontWeight: '600',
+    color: '#3d0c45',
+    marginBottom: height * 0.01,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: width * 0.03,
+    borderWidth: 1,
+    borderColor: 'rgba(61, 12, 69, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  inputIcon: {
+    padding: width * 0.03,
   },
   input: {
-    height: 40,
-    borderColor: '#ccc',
-    borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: 15,
-    justifyContent: 'center',
+    flex: 1,
+    padding: width * 0.03,
+    color: '#333',
+    fontSize: width * 0.04,
+  },
+  inputText: {
+    flex: 1,
+    padding: width * 0.03,
+    color: '#333',
+    fontSize: width * 0.04,
   },
   pickerContainer: {
-    borderColor: '#ccc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: width * 0.03,
     borderWidth: 1,
-    borderRadius: 5,
-    marginBottom: 15,
-    justifyContent: 'center',
+    borderColor: 'rgba(61, 12, 69, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   picker: {
-    height: 40,
+    flex: 1,
+    height: height * 0.06,
   },
   uploadButton: {
-    backgroundColor: '#f0f0f0',
-    padding: 10,
-    borderRadius: 5,
+    backgroundColor: '#3d0c45',
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    padding: height * 0.02,
+    borderRadius: width * 0.03,
+    marginTop: height * 0.01,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  uploadText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 5,
+  buttonIcon: {
+    marginRight: width * 0.02,
   },
-  imageContainer: {
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  image: {
-    width: 200,
-    height: 200,
-    resizeMode: 'contain',
-  },
-  descriptionInput: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  submitButton: {
-    backgroundColor: '#4a148c',
-    padding: 15,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  submitButtonText: {
+  uploadButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: width * 0.045,
     fontWeight: 'bold',
   },
+  imagePreviewContainer: {
+    marginTop: height * 0.02,
+    borderRadius: width * 0.03,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  image: {
+    width: '100%',
+    height: width * 0.6,
+    borderRadius: width * 0.03,
+  },
+  descriptionContainer: {
+    minHeight: height * 0.15,
+  },
+  descriptionInput: {
+    textAlignVertical: 'top',
+  },
+  loader: {
+    marginVertical: height * 0.02,
+  },
   noPictureButton: {
-    backgroundColor: '#0056b3',
-    padding: 15,
-    borderRadius: 5,
+    backgroundColor: '#4A90E2',
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
+    margin: width * 0.05,
+    padding: height * 0.02,
+    borderRadius: width * 0.03,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   noPictureButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: width * 0.045,
+    fontWeight: 'bold',
+  },
+  submitButton: {
+    backgroundColor: '#3d0c45',
+    margin: width * 0.05,
+    padding: height * 0.02,
+    borderRadius: width * 0.03,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: width * 0.045,
     fontWeight: 'bold',
   },
 });
