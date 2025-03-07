@@ -9,7 +9,8 @@ import {
   Alert,
   TextInput,
   Platform,
-  Dimensions
+  Dimensions,
+  ScrollView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -214,77 +215,108 @@ const ProfileScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.profileContainer}>
-        <TouchableOpacity
-          onPress={pickImage}
-          disabled={!isEditing}
-          style={[styles.imageContainer, isEditing && styles.imageContainerEditing]}
-        >
-          {(newImage?.uri || userData?.profileImage) ? (
-            <Image
-              source={{
-                uri: newImage
-                  ? newImage.uri
-                  : `data:${userData.profileImageType};base64,${userData.profileImage}`
-              }}
-              style={styles.profileImage}
-            />
-          ) : (
-            <View style={styles.profileImagePlaceholder}>
-              <Icon name="account" size={60} color="#666" />
-            </View>
-          )}
-          {isEditing && (
-            <View style={styles.editOverlay}>
-              <Icon name="camera" size={24} color="#fff" />
-            </View>
-          )}
-        </TouchableOpacity>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.profileContainer}>
+          <TouchableOpacity
+            onPress={pickImage}
+            disabled={!isEditing}
+            style={[styles.imageContainer, isEditing && styles.imageContainerEditing]}
+          >
+            {(newImage?.uri || userData?.profileImage) ? (
+              <Image
+                source={{
+                  uri: newImage
+                    ? newImage.uri
+                    : `data:${userData.profileImageType};base64,${userData.profileImage}`
+                }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <View style={styles.profileImagePlaceholder}>
+                <Icon name="account" size={60} color="#666" />
+              </View>
+            )}
+            {isEditing && (
+              <View style={styles.editOverlay}>
+                <Icon name="camera" size={24} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
 
-        {isEditing ? (
-          <TextInput
-            style={styles.nameInput}
-            value={editedName}
-            onChangeText={setEditedName}
-            placeholder="Your name"
-          />
-        ) : (
-          <Text style={styles.name}>{userData?.name || 'User Name'}</Text>
-        )}
-      </View>
-
-      <View style={styles.infoContainer}>
-        <View style={styles.infoItem}>
-          <Icon name="email-outline" size={24} color="#666" />
-          <Text style={styles.infoText}>{userData?.email || 'email@example.com'}</Text>
-        </View>
-
-        <View style={styles.infoItem}>
-          <Icon name="phone-outline" size={24} color="#666" />
           {isEditing ? (
             <TextInput
-              style={styles.mobileInput}
-              value={editedMobile}
-              onChangeText={setEditedMobile}
-              placeholder="Your mobile number"
-              keyboardType="phone-pad"
+              style={styles.nameInput}
+              value={editedName}
+              onChangeText={setEditedName}
+              placeholder="Your name"
             />
           ) : (
-            <Text style={styles.infoText}>{userData?.mobile || 'Phone number'}</Text>
+            <Text style={styles.name}>{userData?.name || 'User Name'}</Text>
           )}
         </View>
-      </View>
 
-      {isEditing && (
-        <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>
-          <Text style={styles.saveButtonText}>Save Changes</Text>
+        <View style={styles.infoContainer}>
+          <View style={styles.infoItem}>
+            <Icon name="email-outline" size={24} color="#666" />
+            <Text style={styles.infoText}>{userData?.email || 'email@example.com'}</Text>
+          </View>
+
+          <View style={styles.infoItem}>
+            <Icon name="phone-outline" size={24} color="#666" />
+            {isEditing ? (
+              <TextInput
+                style={styles.mobileInput}
+                value={editedMobile}
+                onChangeText={setEditedMobile}
+                placeholder="Your mobile number"
+                keyboardType="phone-pad"
+              />
+            ) : (
+              <Text style={styles.infoText}>{userData?.mobile || 'Phone number'}</Text>
+            )}
+          </View>
+        </View>
+
+        {isEditing && (
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>
+            <Text style={styles.saveButtonText}>Save Changes</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity 
+            style={styles.optionItem}
+            onPress={() => navigation.navigate('ActivityListScreen')}
+          >
+            <Icon name="history" size={24} color="#3b0b40" />
+            <Text style={styles.optionText}>Activity History</Text>
+            <Icon name="chevron-right" size={24} color="#999" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.optionItem}
+            onPress={() => navigation.navigate('TipsScreen')}
+          >
+            <Icon name="lightbulb-outline" size={24} color="#3b0b40" />
+            <Text style={styles.optionText}>Tips & Advice</Text>
+            <Icon name="chevron-right" size={24} color="#999" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.optionItem}
+            onPress={() => navigation.navigate('HelpScreen')}
+          >
+            <Icon name="help-circle-outline" size={24} color="#3b0b40" />
+            <Text style={styles.optionText}>Help & Support</Text>
+            <Icon name="chevron-right" size={24} color="#999" />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Icon name="logout" size={24} color="#fff" style={styles.logoutIcon} />
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
-      )}
-
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Icon name="logout" size={24} color="#fff" style={styles.logoutIcon} />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -294,6 +326,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  scrollView: {
+    flex: 1,
   },
   centerContent: {
     justifyContent: 'center',
@@ -395,6 +430,24 @@ const styles = StyleSheet.create({
     fontSize: width * 0.04,
     fontWeight: 'bold',
   },
+  optionsContainer: {
+    marginTop: height * 0.03,
+    paddingHorizontal: width * 0.05,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    padding: width * 0.04,
+    borderRadius: width * 0.02,
+    marginBottom: height * 0.02,
+  },
+  optionText: {
+    marginLeft: width * 0.04,
+    fontSize: width * 0.04,
+    color: '#333',
+    flex: 1,
+  },
   logoutButton: {
     backgroundColor: '#3b0b40',
     flexDirection: 'row',
@@ -403,7 +456,7 @@ const styles = StyleSheet.create({
     marginHorizontal: width * 0.05,
     paddingVertical: height * 0.02,
     borderRadius: width * 0.02,
-    marginTop: 'auto',
+    marginTop: height * 0.03,
     marginBottom: height * 0.03,
   },
   logoutIcon: {

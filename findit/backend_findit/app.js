@@ -12,6 +12,7 @@ import bcrypt from 'bcrypt';
 import fs from 'fs';
 import LostItem from './lostitemschema.js';
 import Message from './messageschema.js';
+import Notification from './notificationschema.js';
 
 // Load environment variables
 dotenv.config();
@@ -592,20 +593,151 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
 // **Find Matching Items Based on Description**
 app.post('/matchingfounditems', async (req, res) => {
     try {
-        const { lostItemDescription } = req.body;
-        if (!lostItemDescription) {
-            return res.status(400).json({ status: 'error', message: 'Missing lost item description' });
+        const { lostItemId, lostItemDescription, lostItemLocation, lostItemCategory } = req.body;
+        
+        if (!lostItemDescription && !lostItemId) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Missing lost item information. Please provide either description or item ID' 
+            });
         }
 
-        const matchedItems = await FoundItem.find({ description: { $regex: lostItemDescription, $options: 'i' } });
+        let lostItem;
+        if (lostItemId) {
+            // If an ID is provided, fetch the lost item details
+            lostItem = await LostItem.findById(lostItemId);
+            if (!lostItem) {
+                return res.status(404).json({ 
+                    status: 'error', 
+                    message: 'Lost item not found' 
+                });
+            }
+        }
+
+        // Build the query based on available information
+        const query = {};
+        
+        // Description matching (using text search for better results)
+        if (lostItem?.description || lostItemDescription) {
+            const descriptionToMatch = lostItem?.description || lostItemDescription;
+            // Split the description into keywords
+            const keywords = descriptionToMatch.split(/\s+/).filter(word => word.length > 3);
+            
+            if (keywords.length > 0) {
+                // Create a regex pattern that matches any of the keywords
+                const keywordPattern = keywords.map(word => `(?=.*${word})`).join('');
+                query.description = { $regex: new RegExp(keywordPattern, 'i') };
+            } else {
+                // Fallback to simple matching if no good keywords
+                query.description = { $regex: descriptionToMatch, $options: 'i' };
+            }
+        }
+        
+        // Location matching (if provided)
+        if (lostItem?.location || lostItemLocation) {
+            const locationToMatch = lostItem?.location || lostItemLocation;
+            // Extract city or area name from location string
+            const locationParts = locationToMatch.split(/,|\s+/);
+            if (locationParts.length > 0) {
+                // Match if any part of the location matches
+                const locationRegex = locationParts
+                    .filter(part => part.length > 2)
+                    .map(part => `(?=.*${part})`)
+                    .join('');
+                
+                if (locationRegex) {
+                    query.location = { $regex: new RegExp(locationRegex, 'i') };
+                }
+            }
+        }
+        
+        // Category matching (if available)
+        if (lostItem?.category || lostItemCategory) {
+            const categoryToMatch = lostItem?.category || lostItemCategory;
+            // For category, we want an exact match
+            query.category = categoryToMatch;
+        }
+        
+        console.log('Matching query:', JSON.stringify(query));
+        
+        // Find matching found items
+        const matchedItems = await FoundItem.find(query).sort({ createdAt: -1 }).limit(20);
 
         if (matchedItems.length === 0) {
-            return res.status(200).json({ status: 'not_found', message: 'No items match your description' });
+            return res.status(200).json({ 
+                status: 'not_found', 
+                message: 'No items match your description yet. We\'ll notify you when a match is found.' 
+            });
         }
 
-        res.status(200).json({ status: 'success', matchedItems });
+        // Calculate match score for each item
+        const scoredMatches = matchedItems.map(item => {
+            let score = 0;
+            const maxScore = 100;
+            
+            // Description similarity score (up to 50 points)
+            if (lostItem?.description || lostItemDescription) {
+                const descToMatch = lostItem?.description || lostItemDescription;
+                const descWords = descToMatch.toLowerCase().split(/\s+/);
+                const itemDescWords = item.description.toLowerCase().split(/\s+/);
+                
+                // Count matching words
+                const matchingWords = descWords.filter(word => 
+                    word.length > 3 && itemDescWords.includes(word)
+                ).length;
+                
+                // Calculate percentage of matching words
+                const matchPercentage = matchingWords / Math.max(descWords.length, 1);
+                score += matchPercentage * 50;
+            }
+            
+            // Location similarity score (up to 30 points)
+            if (lostItem?.location || lostItemLocation) {
+                const locToMatch = lostItem?.location || lostItemLocation;
+                const locParts = locToMatch.toLowerCase().split(/,|\s+/);
+                const itemLocParts = item.location.toLowerCase().split(/,|\s+/);
+                
+                // Count matching location parts
+                const matchingParts = locParts.filter(part => 
+                    part.length > 2 && itemLocParts.includes(part)
+                ).length;
+                
+                // Calculate percentage of matching location parts
+                const matchPercentage = matchingParts / Math.max(locParts.length, 1);
+                score += matchPercentage * 30;
+            }
+            
+            // Category exact match (20 points)
+            if ((lostItem?.category || lostItemCategory) && 
+                (lostItem?.category === item.category || lostItemCategory === item.category)) {
+                score += 20;
+            }
+            
+            return {
+                ...item.toObject(),
+                matchScore: Math.min(Math.round(score), maxScore)
+            };
+        });
+        
+        // Sort by match score (highest first)
+        scoredMatches.sort((a, b) => b.matchScore - a.matchScore);
+        
+        // Return only matches with a score above a threshold
+        const goodMatches = scoredMatches.filter(match => match.matchScore > 30);
+        
+        res.status(200).json({ 
+            status: 'success', 
+            matchedItems: goodMatches,
+            totalMatches: matchedItems.length,
+            goodMatches: goodMatches.length
+        });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Error finding matched items' });
+        console.error('Error finding matched items:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Error finding matched items',
+            details: error.message
+        });
     }
 });
 
@@ -835,6 +967,410 @@ function formatMessageTime(date) {
         return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
 }
+
+// **Check for new matches and send notifications**
+app.post('/check-for-matches', async (req, res) => {
+    try {
+        const { userId, lostItemId } = req.body;
+        
+        if (!userId || !lostItemId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Missing required fields: userId and lostItemId'
+            });
+        }
+        
+        // Get the lost item details
+        const lostItem = await LostItem.findById(lostItemId);
+        if (!lostItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lost item not found'
+            });
+        }
+        
+        // Build the query for matching
+        const query = {};
+        
+        // Description matching
+        if (lostItem.description) {
+            const keywords = lostItem.description.split(/\s+/).filter(word => word.length > 3);
+            if (keywords.length > 0) {
+                const keywordPattern = keywords.map(word => `(?=.*${word})`).join('');
+                query.description = { $regex: new RegExp(keywordPattern, 'i') };
+            } else {
+                query.description = { $regex: lostItem.description, $options: 'i' };
+            }
+        }
+        
+        // Location matching
+        if (lostItem.location) {
+            const locationParts = lostItem.location.split(/,|\s+/);
+            if (locationParts.length > 0) {
+                const locationRegex = locationParts
+                    .filter(part => part.length > 2)
+                    .map(part => `(?=.*${part})`)
+                    .join('');
+                
+                if (locationRegex) {
+                    query.location = { $regex: new RegExp(locationRegex, 'i') };
+                }
+            }
+        }
+        
+        // Category matching
+        if (lostItem.category) {
+            query.category = lostItem.category;
+        }
+        
+        // Find matching found items created after the lost item was reported
+        query.createdAt = { $gt: lostItem.createdAt };
+        
+        console.log('Checking for new matches with query:', JSON.stringify(query));
+        
+        const newMatches = await FoundItem.find(query).sort({ createdAt: -1 });
+        
+        if (newMatches.length === 0) {
+            return res.status(200).json({
+                status: 'success',
+                newMatches: 0,
+                message: 'No new matches found'
+            });
+        }
+        
+        // Calculate match scores
+        const scoredMatches = newMatches.map(item => {
+            let score = 0;
+            const maxScore = 100;
+            
+            // Description similarity score (up to 50 points)
+            if (lostItem.description) {
+                const descWords = lostItem.description.toLowerCase().split(/\s+/);
+                const itemDescWords = item.description.toLowerCase().split(/\s+/);
+                
+                const matchingWords = descWords.filter(word => 
+                    word.length > 3 && itemDescWords.includes(word)
+                ).length;
+                
+                const matchPercentage = matchingWords / Math.max(descWords.length, 1);
+                score += matchPercentage * 50;
+            }
+            
+            // Location similarity score (up to 30 points)
+            if (lostItem.location) {
+                const locParts = lostItem.location.toLowerCase().split(/,|\s+/);
+                const itemLocParts = item.location.toLowerCase().split(/,|\s+/);
+                
+                const matchingParts = locParts.filter(part => 
+                    part.length > 2 && itemLocParts.includes(part)
+                ).length;
+                
+                const matchPercentage = matchingParts / Math.max(locParts.length, 1);
+                score += matchPercentage * 30;
+            }
+            
+            // Category exact match (20 points)
+            if (lostItem.category && lostItem.category === item.category) {
+                score += 20;
+            }
+            
+            return {
+                ...item.toObject(),
+                matchScore: Math.min(Math.round(score), maxScore)
+            };
+        });
+        
+        // Filter to good matches only
+        const goodMatches = scoredMatches.filter(match => match.matchScore > 40);
+        
+        if (goodMatches.length === 0) {
+            return res.status(200).json({
+                status: 'success',
+                newMatches: 0,
+                message: 'No significant matches found'
+            });
+        }
+        
+        // Create notifications for each good match
+        const notifications = [];
+        
+        for (const match of goodMatches) {
+            // Check if a notification already exists for this match
+            const existingNotification = await Notification.findOne({
+                userId,
+                lostItemId: lostItem._id,
+                foundItemId: match._id,
+                type: 'match_found'
+            });
+            
+            if (!existingNotification) {
+                // Create a new notification
+                const notification = new Notification({
+                    userId,
+                    lostItemId: lostItem._id,
+                    foundItemId: match._id,
+                    type: 'match_found',
+                    title: 'Potential Match Found!',
+                    message: `We found a ${match.matchScore}% match for your lost ${lostItem.category || 'item'}.`,
+                    read: false,
+                    createdAt: new Date()
+                });
+                
+                await notification.save();
+                notifications.push(notification);
+                
+                // Emit a socket event for real-time notification
+                io.to(userId).emit('newNotification', {
+                    type: 'match_found',
+                    title: 'Potential Match Found!',
+                    message: `We found a ${match.matchScore}% match for your lost ${lostItem.category || 'item'}.`,
+                    matchScore: match.matchScore,
+                    lostItemId: lostItem._id.toString(),
+                    foundItemId: match._id.toString(),
+                    createdAt: new Date()
+                });
+            }
+        }
+        
+        res.status(200).json({
+            status: 'success',
+            newMatches: notifications.length,
+            totalMatches: goodMatches.length,
+            notifications
+        });
+        
+    } catch (error) {
+        console.error('Error checking for matches:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error checking for matches',
+            details: error.message
+        });
+    }
+});
+
+// **Get user notifications**
+app.get('/notifications/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        if (!userId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
+        }
+        
+        const notifications = await Notification.find({ userId })
+            .sort({ createdAt: -1 })
+            .limit(50);
+        
+        res.status(200).json({
+            status: 'success',
+            notifications
+        });
+        
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching notifications',
+            details: error.message
+        });
+    }
+});
+
+// **Mark notification as read**
+app.put('/notifications/:notificationId/read', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        
+        if (!notificationId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Notification ID is required'
+            });
+        }
+        
+        const notification = await Notification.findByIdAndUpdate(
+            notificationId,
+            { $set: { read: true } },
+            { new: true }
+        );
+        
+        if (!notification) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Notification not found'
+            });
+        }
+        
+        res.status(200).json({
+            status: 'success',
+            notification
+        });
+        
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error marking notification as read',
+            details: error.message
+        });
+    }
+});
+
+// **Get Lost Item by ID**
+app.get('/lostitem/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid item ID format'
+            });
+        }
+        
+        const lostItem = await LostItem.findById(id);
+        
+        if (!lostItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lost item not found'
+            });
+        }
+        
+        res.status(200).json({
+            status: 'success',
+            item: lostItem
+        });
+        
+    } catch (error) {
+        console.error('Error fetching lost item:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching lost item',
+            details: error.message
+        });
+    }
+});
+
+// **Get Found Item by ID**
+app.get('/founditem/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid item ID format'
+            });
+        }
+        
+        const foundItem = await FoundItem.findById(id);
+        
+        if (!foundItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Found item not found'
+            });
+        }
+        
+        res.status(200).json({
+            status: 'success',
+            item: foundItem
+        });
+        
+    } catch (error) {
+        console.error('Error fetching found item:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching found item',
+            details: error.message
+        });
+    }
+});
+
+// **Get User's Lost Items**
+app.get('/user/:userId/lostitems', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        if (!userId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
+        }
+        
+        // Find all lost items reported by this user (based on contact info)
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'User not found'
+            });
+        }
+        
+        // Use the user's contact information to find their lost items
+        const lostItems = await LostItem.find({ contact: user.mobile })
+            .sort({ createdAt: -1 });
+        
+        res.status(200).json({
+            status: 'success',
+            items: lostItems
+        });
+        
+    } catch (error) {
+        console.error('Error fetching user lost items:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching user lost items',
+            details: error.message
+        });
+    }
+});
+
+// **Get User's Found Items**
+app.get('/user/:userId/founditems', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        if (!userId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
+        }
+        
+        // Find all found items reported by this user (based on contact info)
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'User not found'
+            });
+        }
+        
+        // Use the user's contact information to find their found items
+        const foundItems = await FoundItem.find({ contact: user.mobile })
+            .sort({ createdAt: -1 });
+        
+        res.status(200).json({
+            status: 'success',
+            items: foundItems
+        });
+        
+    } catch (error) {
+        console.error('Error fetching user found items:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching user found items',
+            details: error.message
+        });
+    }
+});
 
 // **Start Server**
 const PORT = process.env.PORT || 5000;
