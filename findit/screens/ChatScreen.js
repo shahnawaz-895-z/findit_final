@@ -127,6 +127,7 @@ const ChatScreen = ({ route, navigation }) => {
                     });
                     
                     setMessages(formattedMessages);
+                    console.log('Messages loaded:', formattedMessages.length);
                 }
                 setError(null);
             } catch (error) {
@@ -257,6 +258,7 @@ const ChatScreen = ({ route, navigation }) => {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#3b0b40" />
+                <Text>Loading messages...</Text>
             </View>
         );
     }
@@ -265,9 +267,9 @@ const ChatScreen = ({ route, navigation }) => {
         <SafeAreaView style={styles.safeArea}>
             <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.container}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 90}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
             >
                 <View style={styles.header}>
                     <TouchableOpacity 
@@ -299,94 +301,96 @@ const ChatScreen = ({ route, navigation }) => {
                     </View>
                 )}
 
-                <GiftedChat
-                    messages={messages}
-                    onSend={messages => onSend(messages)}
-                    user={{ _id: currentUserId }}
-                    renderBubble={(props) => (
-                        <Bubble
-                            {...props}
-                            wrapperStyle={{
-                                right: { backgroundColor: '#3b0b40' },
-                                left: { backgroundColor: '#f0f0f0' },
-                            }}
-                            textStyle={{
-                                right: { color: '#fff' },
-                                left: { color: '#000' }
-                            }}
-                        />
-                    )}
-                    renderInputToolbar={(props) => (
-                        <InputToolbar
-                            {...props}
-                            containerStyle={styles.inputToolbar}
-                        />
-                    )}
-                    renderComposer={(props) => (
-                        <Composer
-                            {...props}
-                            textInputStyle={styles.composer}
-                        />
-                    )}
-                    renderSend={(props) => (
-                        <Send {...props} containerStyle={styles.sendContainer}>
-                            <View style={styles.sendButton}>
-                                <Ionicons name="send" size={normalize(24)} color="#3b0b40" />
-                            </View>
-                        </Send>
-                    )}
-                    renderLoading={() => (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color="#3b0b40" />
-                        </View>
-                    )}
-                    renderAvatar={(props) => {
-                        // Only show avatar for other user's messages
-                        if (props.currentMessage.user._id !== currentUserId) {
-                            return (
-                                <View style={styles.avatarContainer}>
-                                    {props.currentMessage.user.avatar ? (
-                                        <Image
-                                            source={{ uri: props.currentMessage.user.avatar }}
-                                            style={styles.messageAvatar}
-                                        />
-                                    ) : (
-                                        <View style={styles.placeholderMessageAvatar}>
-                                            <Text style={styles.avatarText}>
-                                                {props.currentMessage.user.name.charAt(0).toUpperCase()}
-                                            </Text>
-                                        </View>
-                                    )}
+                <View style={styles.chatContainer}>
+                    <GiftedChat
+                        messages={messages}
+                        onSend={messages => onSend(messages)}
+                        user={{ _id: currentUserId }}
+                        renderBubble={(props) => (
+                            <Bubble
+                                {...props}
+                                wrapperStyle={{
+                                    right: { backgroundColor: '#3b0b40' },
+                                    left: { backgroundColor: '#f0f0f0' },
+                                }}
+                                textStyle={{
+                                    right: { color: '#fff' },
+                                    left: { color: '#000' }
+                                }}
+                            />
+                        )}
+                        renderInputToolbar={(props) => (
+                            <InputToolbar
+                                {...props}
+                                containerStyle={styles.inputToolbar}
+                            />
+                        )}
+                        renderComposer={(props) => (
+                            <Composer
+                                {...props}
+                                textInputStyle={styles.composer}
+                            />
+                        )}
+                        renderSend={(props) => (
+                            <Send {...props} containerStyle={styles.sendContainer}>
+                                <View style={styles.sendButton}>
+                                    <Ionicons name="send" size={normalize(24)} color="#3b0b40" />
                                 </View>
-                            );
-                        }
-                        return null;
-                    }}
-                    inverted={true}
-                    infiniteScroll
-                    alwaysShowSend
-                    scrollToBottom
-                    showUserAvatar
-                    renderAvatarOnTop
-                    minInputToolbarHeight={normalize(50)}
-                    bottomOffset={Platform.OS === 'ios' ? normalize(30) : 0}
-                    listViewProps={{
-                        style: { backgroundColor: '#fff' },
-                        contentContainerStyle: { paddingBottom: normalize(10) }
-                    }}
-                    timeTextStyle={{
-                        right: { color: '#ddd' },
-                        left: { color: '#777' }
-                    }}
-                    dateFormat="MMM D, YYYY"
-                    textInputProps={{
-                        placeholder: "Type a message...",
-                        placeholderTextColor: "#999",
-                        multiline: true,
-                        maxHeight: normalize(100),
-                        style: styles.textInput
-                    }}
-                />
+                            </Send>
+                        )}
+                        renderLoading={() => (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color="#3b0b40" />
+                            </View>
+                        )}
+                        renderAvatar={(props) => {
+                            // Only show avatar for other user's messages
+                            if (props.currentMessage.user._id !== currentUserId) {
+                                return (
+                                    <View style={styles.avatarContainer}>
+                                        {props.currentMessage.user.avatar ? (
+                                            <Image
+                                                source={{ uri: props.currentMessage.user.avatar }}
+                                                style={styles.messageAvatar}
+                                            />
+                                        ) : (
+                                            <View style={styles.placeholderMessageAvatar}>
+                                                <Text style={styles.avatarText}>
+                                                    {props.currentMessage.user.name.charAt(0).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                );
+                            }
+                            return null;
+                        }}
+                        inverted={true}
+                        infiniteScroll
+                        alwaysShowSend
+                        scrollToBottom
+                        showUserAvatar
+                        renderAvatarOnTop
+                        minInputToolbarHeight={normalize(50)}
+                        bottomOffset={Platform.OS === 'ios' ? normalize(30) : 0}
+                        listViewProps={{
+                            style: { flex: 1, backgroundColor: '#fff' },
+                            contentContainerStyle: { flexGrow: 1 }
+                        }}
+                        timeTextStyle={{
+                            right: { color: '#ddd' },
+                            left: { color: '#777' }
+                        }}
+                        dateFormat="MMM D, YYYY"
+                        textInputProps={{
+                            placeholder: "Type a message...",
+                            placeholderTextColor: "#999",
+                            multiline: true,
+                            maxHeight: normalize(100),
+                            style: styles.textInput
+                        }}
+                    />
+                </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -401,10 +405,15 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
+    chatContainer: {
+        flex: 1,
+        backgroundColor: '#fff',
+    },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: normalize(12),
+        padding: normalize(8),
+        height: normalize(56),
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
         backgroundColor: '#fff',

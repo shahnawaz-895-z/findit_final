@@ -11,7 +11,8 @@ import {
     SafeAreaView,
     ActivityIndicator,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,6 +26,11 @@ const API_URL = 'http://192.168.18.18:5000';
 // Calculate responsive sizes
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
 const normalize = (size) => Math.round(size * scale);
+
+// Get status bar height
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' 
+  ? 44 
+  : StatusBar.currentHeight || 0;
 
 // Fallback data in case API fails
 const FALLBACK_CHAT_DATA = [
@@ -248,8 +254,11 @@ const ChatListScreen = ({ navigation }) => {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
+        <View style={styles.container}>
+            {/* Status Bar */}
+            <View style={styles.statusBar}>
+                <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
+            </View>
             
             {/* Header */}
             <View style={styles.header}>
@@ -259,13 +268,13 @@ const ChatListScreen = ({ navigation }) => {
                         style={styles.headerButton}
                         onPress={onRefresh}
                     >
-                        <Ionicons name="refresh" size={normalize(24)} color="#3b0b40" />
+                        <Ionicons name="refresh" size={normalize(24)} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity 
                         style={styles.headerButton}
                         onPress={() => navigation.navigate('SearchScreen')}
                     >
-                        <Ionicons name="search" size={normalize(24)} color="#3b0b40" />
+                        <Ionicons name="search" size={normalize(24)} color="#fff" />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -303,7 +312,7 @@ const ChatListScreen = ({ navigation }) => {
                     }
                 />
             )}
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -312,15 +321,17 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
+    statusBar: {
+        height: STATUSBAR_HEIGHT,
+        backgroundColor: '#3b0b40',
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: normalize(16),
-        paddingVertical: normalize(12),
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        backgroundColor: '#fff',
+        paddingVertical: normalize(16),
+        backgroundColor: '#3b0b40',
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
@@ -330,7 +341,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: normalize(20),
         fontWeight: 'bold',
-        color: '#3b0b40',
+        color: '#fff',
     },
     headerButtons: {
         flexDirection: 'row',

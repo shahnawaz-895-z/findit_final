@@ -8,11 +8,17 @@ import {
   SafeAreaView,
   Alert,
   Modal,
-  FlatList
+  FlatList,
+  StatusBar,
+  Platform,
+  Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+
+// Get status bar height to ensure proper padding on all devices
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 const HomePage = ({ navigation }) => {
   const [notificationVisible, setNotificationVisible] = useState(false);
@@ -90,13 +96,24 @@ const HomePage = ({ navigation }) => {
     </TouchableOpacity>
   );
 
+  // Custom StatusBar component to ensure visibility
+  const CustomStatusBar = ({backgroundColor, ...props}) => (
+    <View style={[styles.statusBar, { backgroundColor }]}>
+      <StatusBar translucent backgroundColor={backgroundColor} {...props} />
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
+    <View style={styles.container}>
+      {/* Custom Status Bar */}
+      <CustomStatusBar backgroundColor="#3d0c45" barStyle="light-content" />
+      
+      {/* Top Header - Explicitly set with proper height and padding */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Lost & Found</Text>
         <TouchableOpacity onPress={toggleNotifications} style={styles.notificationButton}>
-          <Icon name="notifications-outline" size={24} color="#3d0c45" />
+          <Icon name="notifications-outline" size={24} color="#fff" />
+          {/* Notification Badge */}
           <View style={styles.notificationBadge}>
             <Text style={styles.notificationBadgeText}>2</Text>
           </View>
@@ -132,7 +149,7 @@ const HomePage = ({ navigation }) => {
 
       {/* Bottom Navigation */}
       <View style={styles.navbar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => { }}>
+        <TouchableOpacity style={styles.navItem} onPress={() => {}}>
           <Icon name="home" size={24} color="#3d0c45" />
           <Text style={styles.navText}>Home</Text>
         </TouchableOpacity>
@@ -145,7 +162,7 @@ const HomePage = ({ navigation }) => {
 
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('ChatListScreen')}>
           <View style={styles.iconContainer}>
-            <Icon name="chatbubble-ellipses" size={24} color="#3d0c45" />
+            <Icon name="chatbubble-ellipses" size={24} color="#666" />
             {unreadMessages > 0 && (
               <View style={styles.badgeContainer}>
                 <Text style={styles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
@@ -209,11 +226,15 @@ const HomePage = ({ navigation }) => {
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  // Status bar specific styles to ensure proper height
+  statusBar: {
+    height: STATUSBAR_HEIGHT,
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',
@@ -222,14 +243,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: '#3d0c45',
+    paddingTop: Platform.OS === 'ios' ? 10 : 10,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    height: Platform.OS === 'ios' ? 60 : 56,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#3d0c45',
+    color: '#fff',
   },
   notificationButton: {
     padding: 8,
@@ -256,6 +284,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#fff',
   },
   logo: {
     width: 200,
@@ -273,6 +302,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     width: '90%',
     elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   buttonIcon: {
     marginRight: 10,
@@ -291,6 +324,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#eee',
     elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   navItem: {
     alignItems: 'center',
