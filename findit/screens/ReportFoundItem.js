@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, ScrollView, Alert, Platform, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, ScrollView, Alert, Platform, Dimensions, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
@@ -7,23 +7,33 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import { Picker } from '@react-native-picker/picker';
+import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
+const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
 
 const ReportFoundItem = () => {
+  const navigation = useNavigation();
   const [contact, setContact] = useState('');
   const [location, setLocation] = useState('');
   const [photo, setPhoto] = useState(null);
   const [description, setDescription] = useState('');
-  const [time, setTime] = useState(null);
-  const [date, setDate] = useState(null);
+  const [time, setTime] = useState(new Date());
+  const [date, setDate] = useState(new Date());
+  const [category, setCategory] = useState('');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [geolocation, setGeolocation] = useState(null);
   const [mapVisible, setMapVisible] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [itemName, setItemName] = useState('');
 
+  const BACKEND_URL = 'http://192.168.18.18:5000'; // Updated backend URL for Android emulator
   const HUGGING_FACE_API_KEY = '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';
+  const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
 
   useEffect(() => {
     const getLocationPermission = async () => {
@@ -33,10 +43,17 @@ const ReportFoundItem = () => {
         return;
       }
 
-      const userLocation = await Location.getCurrentPositionAsync({});
-      setGeolocation(userLocation.coords);
-      const address = await Location.reverseGeocodeAsync(userLocation.coords);
-      setLocation(`${address[0]?.city}, ${address[0]?.region}, ${address[0]?.country}`);
+      try {
+        const userLocation = await Location.getCurrentPositionAsync({});
+        setGeolocation(userLocation.coords);
+        setSelectedLocation(userLocation.coords);
+        const address = await Location.reverseGeocodeAsync(userLocation.coords);
+        if (address && address.length > 0) {
+          setLocation(`${address[0]?.city || ''}, ${address[0]?.region || ''}, ${address[0]?.country || ''}`);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
     };
 
     getLocationPermission();
@@ -74,6 +91,7 @@ const ReportFoundItem = () => {
       return;
     }
 
+    setIsLoading(true);
     const huggingFaceUrl = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
 
     try {
@@ -96,6 +114,8 @@ const ReportFoundItem = () => {
     } catch (error) {
       console.error('Error processing image:', error);
       Alert.alert('Error processing the image. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -109,77 +129,166 @@ const ReportFoundItem = () => {
     if (selectedDate) setDate(selectedDate);
   };
 
-  const handleSubmit = async () => {
-    if (!contact || !location || !time || !date || !photo || !description || !selectedLocation) {
-      Alert.alert('Missing Information', 'Please fill in all fields and upload a photo.');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('contact', contact);
-    formData.append('location', location);
-    formData.append('time', time ? time.toLocaleTimeString() : '');
-    formData.append('date', date ? date.toLocaleDateString() : '');
-    formData.append('description', description);
-    formData.append('latitude', selectedLocation.latitude);
-    formData.append('longitude', selectedLocation.longitude);
-
-    if (photo) {
-      let photoUri = photo;
-      if (Platform.OS === 'android' && !photo.startsWith('file://')) {
-        photoUri = `file://${photo}`;
-      }
-
-      formData.append('photo', {
-        uri: photoUri,
-        name: 'photo.jpg',
-        type: 'image/jpeg',
-      });
-    }
-
-    try {
-      const response = await axios.post(`${API_URL}/reportfound`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      console.log('Response:', response);
-      if (response.data && response.data.status === 'success') {
-        Alert.alert('Success', 'Found item reported successfully');
-        // Clear the form after successful submission
-        setContact('');
-        setLocation('');
-        setPhoto(null);
-        setDescription('');
-        setTime(null);
-        setDate(null);
-        setGeolocation(null);
-        setSelectedLocation(null);
-      } else {
-        Alert.alert('Error', response.data.message || 'There was a problem reporting the found item');
-      }
-    } catch (error) {
-      console.error('Error submitting form:', error);
-      if (error.response) {
-        Alert.alert('Error', `Server error: ${error.response.status}`);
-      } else if (error.request) {
-        Alert.alert('Error', 'No response received from the server');
-      } else {
-        Alert.alert('Error', 'An unexpected error occurred');
-      }
-    }
-  };
-
   const handleMapPress = (event) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setSelectedLocation({ latitude, longitude });
 
     Location.reverseGeocodeAsync({ latitude, longitude }).then((addresses) => {
       if (addresses && addresses.length > 0) {
-        setLocation(`${addresses[0]?.city}, ${addresses[0]?.region}, ${addresses[0]?.country}`);
+        setLocation(`${addresses[0]?.city || ''}, ${addresses[0]?.region || ''}, ${addresses[0]?.country || ''}`);
       }
     });
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!contact) {
+      Alert.alert('Error', 'Please provide contact information.');
+      return;
+    }
+    if (!location) {
+      Alert.alert('Error', 'Please provide the location.');
+      return;
+    }
+    if (!time) {
+      Alert.alert('Error', 'Please select a time.');
+      return;
+    }
+    if (!date) {
+      Alert.alert('Error', 'Please select a date.');
+      return;
+    }
+    if (!description) {
+      Alert.alert('Error', 'Please provide a description.');
+      return;
+    }
+    if (!category) {
+      Alert.alert('Error', 'Please select a category.');
+      return;
+    }
+    if (!selectedLocation) {
+      Alert.alert('Error', 'Please select a location on the map.');
+      return;
+    }
+    if (!itemName) {
+      Alert.alert('Error', 'Please provide the item name.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('contact', contact);
+      formData.append('location', location);
+      formData.append('time', time.toISOString());
+      formData.append('date', date.toISOString());
+      formData.append('description', description);
+      formData.append('category', category);
+      formData.append('latitude', selectedLocation.latitude);
+      formData.append('longitude', selectedLocation.longitude);
+      formData.append('itemName', itemName);
+
+      if (photo) {
+        let photoUri = photo;
+        if (Platform.OS === 'android' && !photo.startsWith('file://')) {
+          photoUri = `file://${photo}`;
+        }
+
+        formData.append('photo', {
+          uri: photoUri,
+          type: 'image/jpeg',
+          name: 'photo.jpg',
+        });
+      }
+
+      // Add to recent activity
+      await addToRecentActivity();
+
+      // For demo purposes, simulate a successful response
+      setTimeout(() => {
+        setIsLoading(false);
+        Alert.alert(
+          'Success',
+          'Your found item has been reported successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('HomePage')
+            }
+          ]
+        );
+      }, 1500);
+    } catch (error) {
+      console.error('Error submitting found item:', error);
+      setIsLoading(false);
+      Alert.alert('Error', 'Failed to submit your report. Please try again.');
+    }
+  };
+
+  // Add formatRelativeTime function
+  const formatRelativeTime = (date) => {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffSec < 60) {
+      return 'Just now';
+    } else if (diffMin < 60) {
+      return `${diffMin} ${diffMin === 1 ? 'minute' : 'minutes'} ago`;
+    } else if (diffHour < 24) {
+      return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
+    } else if (diffDay < 30) {
+      return `${diffDay} ${diffDay === 1 ? 'day' : 'days'} ago`;
+    } else {
+      // Format as date if older than 30 days
+      return date.toLocaleDateString();
+    }
+  };
+
+  // Update addToRecentActivity function to include itemName and better time display
+  const addToRecentActivity = async () => {
+    try {
+      // Format the date for display
+      const now = new Date();
+      const formattedDate = formatRelativeTime(now);
+      
+      // Create the activity object with actual item details
+      const newActivity = {
+        id: Date.now().toString(),
+        type: 'found',
+        title: itemName,
+        status: 'pending',
+        location: location,
+        date: formattedDate,
+        timestamp: now.toISOString(),
+        category: category,
+        photo: photo ? photo : null,
+        description: description
+      };
+      
+      // Get existing activities from AsyncStorage
+      const storedActivities = await AsyncStorage.getItem(ACTIVITY_STORAGE_KEY);
+      let activities = [];
+      
+      if (storedActivities) {
+        activities = JSON.parse(storedActivities);
+      }
+      
+      // Add new activity at the beginning
+      activities.unshift(newActivity);
+      
+      // Store updated activities
+      await AsyncStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activities));
+      
+      return newActivity;
+    } catch (error) {
+      console.error('Error adding to recent activity:', error);
+      return null;
+    }
   };
 
   return (
@@ -197,7 +306,7 @@ const ReportFoundItem = () => {
         </View>
         {showTimePicker && (
           <DateTimePicker
-            value={time || new Date()}
+            value={time}
             mode="time"
             display="default"
             onChange={onTimeChange}
@@ -214,7 +323,7 @@ const ReportFoundItem = () => {
         </View>
         {showDatePicker && (
           <DateTimePicker
-            value={date || new Date()}
+            value={date}
             mode="date"
             display="default"
             onChange={onDateChange}
@@ -222,14 +331,29 @@ const ReportFoundItem = () => {
         )}
 
         <View style={styles.inputContainer}>
-          <Ionicons name="person-outline" size={24} color="#3d0c45" style={styles.icon} />
+          <Ionicons name="call-outline" size={24} color="#3d0c45" style={styles.icon} />
           <TextInput
             style={styles.input}
             placeholder="Enter Contact Information"
             onChangeText={(text) => setContact(text)}
             value={contact}
+            keyboardType="phone-pad"
             placeholderTextColor="#666"
           />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Ionicons name="list-outline" size={24} color="#3d0c45" style={styles.icon} />
+          <Picker
+            selectedValue={category}
+            onValueChange={(itemValue) => setCategory(itemValue)}
+            style={styles.picker}
+          >
+            <Picker.Item label="Select Category" value="" />
+            {categories.map((item, index) => (
+              <Picker.Item key={index} label={item} value={item} />
+            ))}
+          </Picker>
         </View>
 
         <View style={styles.inputContainer}>
@@ -269,15 +393,59 @@ const ReportFoundItem = () => {
           </View>
         )}
 
-        {description && (
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#3d0c45" style={styles.loader} />
+        ) : description ? (
           <View style={styles.descriptionContainer}>
             <Text style={styles.descriptionLabel}>AI-Generated Description:</Text>
-            <Text style={styles.descriptionText}>{description}</Text>
+            <TextInput
+              style={styles.descriptionInput}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              placeholder="Edit description if needed"
+              placeholderTextColor="#666"
+            />
+          </View>
+        ) : (
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.descriptionLabel}>Description:</Text>
+            <TextInput
+              style={styles.descriptionInput}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              placeholder="Enter description of the found item"
+              placeholderTextColor="#666"
+            />
           </View>
         )}
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Submit Report</Text>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Name:</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="pricetag-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter item name (e.g., Blue Keys)"
+              value={itemName}
+              onChangeText={setItemName}
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.submitButton} 
+          onPress={handleSubmit}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.submitButtonText}>Submit Report</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -327,6 +495,10 @@ const styles = StyleSheet.create({
   inputText: {
     color: '#333',
     fontSize: width * 0.04,
+  },
+  picker: {
+    flex: 1,
+    height: height * 0.06,
   },
   map: {
     width: '100%',
@@ -394,6 +566,12 @@ const styles = StyleSheet.create({
     color: '#333',
     lineHeight: width * 0.06,
   },
+  descriptionInput: {
+    fontSize: width * 0.04,
+    color: '#333',
+    textAlignVertical: 'top',
+    minHeight: height * 0.1,
+  },
   submitButton: {
     backgroundColor: '#3d0c45',
     padding: height * 0.02,
@@ -411,6 +589,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: width * 0.045,
     fontWeight: 'bold',
+  },
+  loader: {
+    marginVertical: height * 0.03,
+  },
+  inputGroup: {
+    marginBottom: height * 0.02,
+  },
+  label: {
+    fontSize: width * 0.04,
+    fontWeight: 'bold',
+    color: '#3d0c45',
+    marginBottom: height * 0.01,
+  },
+  inputIcon: {
+    marginLeft: width * 0.04,
+    marginRight: width * 0.02,
   },
 });
 

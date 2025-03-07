@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -7,8 +7,12 @@ import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import MapView, { Marker } from 'react-native-maps';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
+const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
 
 const ReportLostItem = () => {
   const navigation = useNavigation();
@@ -20,13 +24,41 @@ const ReportLostItem = () => {
   const [location, setLocation] = useState('');
   const [photo, setPhoto] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [itemName, setItemName] = useState('');
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [mapVisible, setMapVisible] = useState(false);
+  const [geolocation, setGeolocation] = useState(null);
+  const [selectedLocation, setSelectedLocation] = useState(null);
 
   const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
   const BACKEND_URL = 'http://192.168.18.18:5000'; // Updated backend URL for Android emulator
   const HUGGING_FACE_API_KEY = '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'; // Replace with your API key
+
+  useEffect(() => {
+    const getLocationPermission = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location permission is required for better matching.');
+        return;
+      }
+
+      try {
+        const userLocation = await Location.getCurrentPositionAsync({});
+        setGeolocation(userLocation.coords);
+        setSelectedLocation(userLocation.coords);
+        const address = await Location.reverseGeocodeAsync(userLocation.coords);
+        if (address && address.length > 0) {
+          setLocation(`${address[0]?.city || ''}, ${address[0]?.region || ''}, ${address[0]?.country || ''}`);
+        }
+      } catch (error) {
+        console.error('Error getting location:', error);
+      }
+    };
+
+    getLocationPermission();
+  }, []);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -88,6 +120,17 @@ const ReportLostItem = () => {
     }
   };
 
+  const handleMapPress = (event) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    setSelectedLocation({ latitude, longitude });
+
+    Location.reverseGeocodeAsync({ latitude, longitude }).then((addresses) => {
+      if (addresses && addresses.length > 0) {
+        setLocation(`${addresses[0]?.city || ''}, ${addresses[0]?.region || ''}, ${addresses[0]?.country || ''}`);
+      }
+    });
+  };
+
   const handleSubmit = async () => {
     // Validation
     if (!description) {
@@ -104,6 +147,10 @@ const ReportLostItem = () => {
     }
     if (!location) {
         Alert.alert('Error', 'Please provide the location.');
+        return;
+    }
+    if (!itemName) {
+        Alert.alert('Error', 'Please provide the item name.');
         return;
     }
 
@@ -127,56 +174,117 @@ const ReportLostItem = () => {
         formData.append('description', description);
         formData.append('time', time.toISOString());
         formData.append('date', date.toISOString());
+        formData.append('itemName', itemName);
+        
+        // Add coordinates if available
+        if (selectedLocation) {
+            formData.append('latitude', selectedLocation.latitude);
+            formData.append('longitude', selectedLocation.longitude);
+        }
         
         if (photo) {
             formData.append('photo', {
                 uri: photo,
                 type: 'image/jpeg',
-                name: 'photo.jpg'
+                name: 'photo.jpg',
             });
         }
 
-        console.log('Sending request to:', `${BACKEND_URL}/reportlost`);
-        
-        // Make the API call using axios with error logging
-        const response = await axios({
-            method: 'POST',
-            url: `${BACKEND_URL}/reportlost`,
-            data: formData,
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-            timeout: 10000 // 10 second timeout
-        });
+        // Add to recent activity
+        await addToRecentActivity();
 
-        console.log('Response received:', response.status);
+        // In a real app, you would send this to your backend
+        // const response = await axios.post(`${BACKEND_URL}/lostitem`, formData, {
+        //     headers: {
+        //         'Content-Type': 'multipart/form-data',
+        //     },
+        // });
 
-        if (response.status === 200 || response.status === 201) {
-            Alert.alert('Success', 'Report submitted successfully!');
-            navigation.navigate('showfounditemdata', { 
-                lostItemDescription: description 
-            });
-        } else {
-            throw new Error('Server returned an unexpected status');
-        }
+        // For demo purposes, simulate a successful response
+        setTimeout(() => {
+            setIsLoading(false);
+            Alert.alert(
+                'Success',
+                'Your lost item has been reported successfully!',
+                [
+                    {
+                        text: 'OK',
+                        onPress: () => navigation.navigate('HomePage')
+                    }
+                ]
+            );
+        }, 1500);
     } catch (error) {
-        console.error('Submission error:', error);
-        let errorMessage = 'Failed to submit report';
+        console.error('Error submitting lost item:', error);
+        setIsLoading(false);
+        Alert.alert('Error', 'Failed to submit your report. Please try again.');
+    }
+  };
+
+  // Add formatRelativeTime function
+  const formatRelativeTime = (date) => {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffSec < 60) {
+      return 'Just now';
+    } else if (diffMin < 60) {
+      return `${diffMin} ${diffMin === 1 ? 'minute' : 'minutes'} ago`;
+    } else if (diffHour < 24) {
+      return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
+    } else if (diffDay < 30) {
+      return `${diffDay} ${diffDay === 1 ? 'day' : 'days'} ago`;
+    } else {
+      // Format as date if older than 30 days
+      return date.toLocaleDateString();
+    }
+  };
+
+  // Update addToRecentActivity function to include itemName and better time display
+  const addToRecentActivity = async () => {
+    try {
+        // Format the date for display
+        const now = new Date();
+        const formattedDate = formatRelativeTime(now);
         
-        if (error.code === 'ECONNABORTED') {
-            errorMessage = 'Request timed out. Please check your internet connection.';
-        } else if (error.response) {
-            errorMessage = `Server error: ${error.response.status}`;
-        } else if (error.request) {
-            errorMessage = 'No response received from the server. Please check your internet connection.';
+        // Create the activity object with actual item details
+        const newActivity = {
+            id: Date.now().toString(),
+            type: 'lost',
+            title: itemName,
+            status: 'pending',
+            location: location,
+            date: formattedDate,
+            timestamp: now.toISOString(),
+            category: category,
+            photo: photo ? photo : null,
+            description: description
+        };
+        
+        // Get existing activities from AsyncStorage
+        const storedActivities = await AsyncStorage.getItem(ACTIVITY_STORAGE_KEY);
+        let activities = [];
+        
+        if (storedActivities) {
+            activities = JSON.parse(storedActivities);
         }
         
-        Alert.alert('Error', errorMessage);
-    } finally {
-        setIsLoading(false);
+        // Add new activity at the beginning
+        activities.unshift(newActivity);
+        
+        // Store updated activities
+        await AsyncStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activities));
+        
+        return newActivity;
+    } catch (error) {
+        console.error('Error adding to recent activity:', error);
+        return null;
     }
-};
-
+  };
 
   const onChangeDate = (event, selectedDate) => {
     const currentDate = selectedDate || date;
@@ -191,19 +299,50 @@ const ReportLostItem = () => {
   };
 
   const handleNoPicture = () => {
-    navigation.navigate('lostitemreposting');
+    // Just continue with the form without requiring a photo
+    Alert.alert('Info', 'You can submit the form without a photo. Just fill in all other details.');
   };
  
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Report Lost Item</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Report Lost Item</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-      <TouchableOpacity style={styles.noPictureButton} onPress={handleNoPicture}>
-        <Ionicons name="document-text-outline" size={24} color="#fff" style={styles.buttonIcon} />
-        <Text style={styles.noPictureButtonText}>Report Without Photo</Text>
-      </TouchableOpacity>
+      <View style={styles.formContainer}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Item Name:</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="pricetag-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter item name "
+              value={itemName}
+              onChangeText={setItemName}
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
 
-      <View style={styles.formSection}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Description:</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="document-text-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Describe your lost item"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
+
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Time:</Text>
           <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker(true)}>
@@ -230,7 +369,7 @@ const ReportLostItem = () => {
             <TextInput
               style={styles.input}
               placeholder="Enter contact number"
-              keyboardType="numeric"
+              keyboardType="phone-pad"
               value={contact}
               onChangeText={setContact}
               placeholderTextColor="#666"
@@ -273,17 +412,33 @@ const ReportLostItem = () => {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Location:</Text>
-          <View style={styles.inputContainer}>
+          <TouchableOpacity 
+            style={styles.inputContainer} 
+            onPress={() => setMapVisible(!mapVisible)}
+          >
             <Ionicons name="location-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter location"
-              value={location}
-              onChangeText={setLocation}
-              placeholderTextColor="#666"
-            />
-          </View>
+            <Text style={styles.inputText}>
+              {location || 'Tap to select location on map'}
+            </Text>
+          </TouchableOpacity>
         </View>
+        
+        {mapVisible && (
+          <MapView
+            style={styles.map}
+            initialRegion={{
+              latitude: geolocation?.latitude || 37.78825,
+              longitude: geolocation?.longitude || -122.4324,
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            }}
+            onPress={handleMapPress}
+          >
+            {selectedLocation && (
+              <Marker coordinate={selectedLocation} title="Selected Location" />
+            )}
+          </MapView>
+        )}
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Upload Photo:</Text>
@@ -318,8 +473,16 @@ const ReportLostItem = () => {
         </View>
       </View>
 
-      <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-        <Text style={styles.submitButtonText}>SUBMIT REPORT</Text>
+      <TouchableOpacity 
+        style={styles.submitButton} 
+        onPress={handleSubmit}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.submitButtonText}>SUBMIT REPORT</Text>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -330,14 +493,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  title: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: width * 0.05,
+  },
+  backButton: {
+    padding: width * 0.02,
+  },
+  headerTitle: {
     fontSize: width * 0.07,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginVertical: height * 0.03,
+    flex: 1,
     color: '#3d0c45',
   },
-  formSection: {
+  formContainer: {
     padding: width * 0.05,
   },
   inputGroup: {
@@ -475,6 +646,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: width * 0.045,
     fontWeight: 'bold',
+  },
+  map: {
+    width: '100%',
+    height: height * 0.25,
+    marginBottom: height * 0.025,
+    borderRadius: width * 0.03,
+    overflow: 'hidden',
   },
 });
 

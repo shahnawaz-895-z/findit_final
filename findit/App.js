@@ -10,11 +10,18 @@ import HomePage from './screens/Homepage.js';
 import ReportFoundItem from './screens/ReportFoundItem';
 import ReportLostItem from './screens/ReportLostItem';
 import ShowFoundItemData from './screens/Showfounditemdata';
-
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
 import SearchScreen from './screens/SearchScreen.js';
 import ChatListScreen from './screens/ChatListScreen.js';
+import MatchesScreen from './screens/MatchesScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
+import MatchDetailsScreen from './screens/MatchDetailsScreen';
+import DashboardScreen from './screens/DashboardScreen';
+import ActivityListScreen from './screens/ActivityListScreen';
+import TipsScreen from './screens/TipsScreen';
+import HelpScreen from './screens/HelpScreen';
+
 const Stack = createStackNavigator();
 
 const screenOptions = {
@@ -64,6 +71,13 @@ export default function App() {
           <Stack.Screen name="ChatScreen" component={ChatScreen} />
           <Stack.Screen name="SearchScreen" component={SearchScreen} />
           <Stack.Screen name="ChatListScreen" component={ChatListScreen} />
+          <Stack.Screen name="MatchesScreen" component={MatchesScreen} />
+          <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
+          <Stack.Screen name="MatchDetailsScreen" component={MatchDetailsScreen} />
+          <Stack.Screen name="DashboardScreen" component={DashboardScreen} />
+          <Stack.Screen name="ActivityListScreen" component={ActivityListScreen} />
+          <Stack.Screen name="TipsScreen" component={TipsScreen} />
+          <Stack.Screen name="HelpScreen" component={HelpScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
