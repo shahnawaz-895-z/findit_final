@@ -6,7 +6,6 @@ import { Picker } from '@react-native-picker/picker';
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
-import { API_URL } from '@env';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
@@ -26,7 +25,7 @@ const ReportLostItem = () => {
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
-  const BACKEND_URL = API_URL; 
+  const BACKEND_URL = 'http://192.168.18.18:5000'; // Updated backend URL for Android emulator
   const HUGGING_FACE_API_KEY = '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'; // Replace with your API key
 
   const pickImage = async () => {
@@ -117,29 +116,40 @@ const ReportLostItem = () => {
             const base64 = await FileSystem.readAsStringAsync(photo, {
                 encoding: FileSystem.EncodingType.Base64,
             });
-            photoData = `data:image/jpeg;base64,${base64}`;
+            photoData = base64;  // Remove the data URL prefix
         }
 
         // Create the request body
-        const requestBody = {
-            contact,
-            category,
-            location,
-            description,
-            time: time.toISOString(),
-            date: date.toISOString(),
-            photo: photoData
-        };
+        const formData = new FormData();
+        formData.append('contact', contact);
+        formData.append('category', category);
+        formData.append('location', location);
+        formData.append('description', description);
+        formData.append('time', time.toISOString());
+        formData.append('date', date.toISOString());
+        
+        if (photo) {
+            formData.append('photo', {
+                uri: photo,
+                type: 'image/jpeg',
+                name: 'photo.jpg'
+            });
+        }
 
-        // Make the API call using axios
+        console.log('Sending request to:', `${BACKEND_URL}/reportlost`);
+        
+        // Make the API call using axios with error logging
         const response = await axios({
             method: 'POST',
             url: `${BACKEND_URL}/reportlost`,
-            data: requestBody,
+            data: formData,
             headers: {
-                'Content-Type': 'application/json',
-            }
+                'Content-Type': 'multipart/form-data',
+            },
+            timeout: 10000 // 10 second timeout
         });
+
+        console.log('Response received:', response.status);
 
         if (response.status === 200 || response.status === 201) {
             Alert.alert('Success', 'Report submitted successfully!');
@@ -151,10 +161,17 @@ const ReportLostItem = () => {
         }
     } catch (error) {
         console.error('Submission error:', error);
-        Alert.alert(
-            'Error', 
-            `Failed to submit report: ${error.response?.data?.message || error.message}`
-        );
+        let errorMessage = 'Failed to submit report';
+        
+        if (error.code === 'ECONNABORTED') {
+            errorMessage = 'Request timed out. Please check your internet connection.';
+        } else if (error.response) {
+            errorMessage = `Server error: ${error.response.status}`;
+        } else if (error.request) {
+            errorMessage = 'No response received from the server. Please check your internet connection.';
+        }
+        
+        Alert.alert('Error', errorMessage);
     } finally {
         setIsLoading(false);
     }
