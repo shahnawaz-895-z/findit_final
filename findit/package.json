@@ -56,7 +56,8 @@
     "react-native-screens": "~4.4.0",
     "react-native-twitter-signin": "^1.1.1",
     "react-native-vector-icons": "^10.2.0",
-    "react-native-voice": "^0.3.0"
+    "react-native-voice": "^0.3.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0"

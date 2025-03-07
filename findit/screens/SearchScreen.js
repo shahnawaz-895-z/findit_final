@@ -8,11 +8,18 @@ import {
     TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
-    Dimensions
+    Dimensions,
+    SafeAreaView,
+    StatusBar
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
-const { width, height } = Dimensions.get('window');
+// Get screen dimensions and handle orientation changes
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Calculate responsive sizes
+const scale = SCREEN_WIDTH / 375; // 375 is standard width
+const normalize = (size) => Math.round(size * scale);
 
 const SearchScreen = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -106,13 +113,11 @@ const SearchScreen = ({ navigation }) => {
             ? `data:${item.profileImageType};base64,${item.profileImage}`
             : null;
 
-        console.log('Image URI available:', !!imageUri); // Debug log
+        console.log('User item:', item);
+        console.log('User ID for messaging:', item._id);
 
         return (
-            <TouchableOpacity
-                style={styles.userItem}
-                onPress={() => navigation.navigate('ChatScreen', { user: item })}
-            >
+            <View style={styles.userItem}>
                 <View style={styles.avatarContainer}>
                     {imageUri ? (
                         <Image
@@ -132,59 +137,122 @@ const SearchScreen = ({ navigation }) => {
                     <Text style={styles.userName}>{item.name}</Text>
                     <Text style={styles.userEmail}>{item.email}</Text>
                 </View>
-            </TouchableOpacity>
-        );
-    };
-
-    if (!isServerConnected) {
-        return (
-            <View style={styles.container}>
-                <Text style={styles.errorText}>
-                    Unable to connect to server. Please check your connection and ensure the server is running.
-                </Text>
                 <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={testServerConnection}
+                    style={styles.messageButton}
+                    onPress={() => {
+                        console.log('Starting conversation with user:', item.name);
+                        console.log('User ID:', item._id);
+                        
+                        navigation.navigate('ChatScreen', { 
+                            user: {
+                                id: item._id,
+                                name: item.name,
+                                avatar: imageUri
+                            } 
+                        });
+                    }}
                 >
-                    <Text style={styles.retryButtonText}>Retry Connection</Text>
+                    <Icon name="chatbubble-ellipses" size={20} color="#fff" />
+                    <Text style={styles.messageButtonText}>Message</Text>
                 </TouchableOpacity>
             </View>
         );
-    }
+    };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.searchBar}>
-                <Icon name="search" size={20} color="#666" style={styles.searchIcon} />
+        <SafeAreaView style={styles.container}>
+            <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
+            
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity 
+                    style={styles.backButton}
+                    onPress={() => navigation.goBack()}
+                >
+                    <Icon name="arrow-back" size={normalize(24)} color="#3b0b40" />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Search Users</Text>
+            </View>
+            
+            {/* Search Input */}
+            <View style={styles.searchContainer}>
+                <Icon name="search" size={normalize(20)} color="#999" style={styles.searchIcon} />
                 <TextInput
                     style={styles.searchInput}
-                    placeholder="Search users..."
+                    placeholder="Search for users..."
+                    placeholderTextColor="#999"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
+                    autoCapitalize="none"
                 />
+                {searchQuery.length > 0 && (
+                    <TouchableOpacity 
+                        style={styles.clearButton}
+                        onPress={() => setSearchQuery('')}
+                    >
+                        <Icon name="close-circle" size={normalize(20)} color="#999" />
+                    </TouchableOpacity>
+                )}
             </View>
-
-            {loading && (
-                <ActivityIndicator style={styles.loader} color="#3b0b40" />
+            
+            {/* Server Connection Error */}
+            {!isServerConnected && (
+                <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>
+                        Unable to connect to server. Please check your connection and ensure the server is running.
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.retryButton}
+                        onPress={testServerConnection}
+                    >
+                        <Text style={styles.retryButtonText}>Retry Connection</Text>
+                    </TouchableOpacity>
+                </View>
             )}
-
-            {error && (
-                <Text style={styles.errorText}>{error}</Text>
+            
+            {/* Search Results */}
+            {isServerConnected && (
+                <>
+                    {loading ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#3b0b40" />
+                        </View>
+                    ) : (
+                        <>
+                            {error ? (
+                                <View style={styles.errorContainer}>
+                                    <Text style={styles.errorText}>{error}</Text>
+                                </View>
+                            ) : (
+                                <FlatList
+                                    data={users}
+                                    renderItem={renderUserItem}
+                                    keyExtractor={(item) => item._id}
+                                    contentContainerStyle={styles.userList}
+                                    ListEmptyComponent={
+                                        searchQuery.length > 2 ? (
+                                            <View style={styles.emptyContainer}>
+                                                <Icon name="search" size={normalize(50)} color="#ccc" />
+                                                <Text style={styles.emptyText}>No users found</Text>
+                                                <Text style={styles.emptySubText}>
+                                                    Try a different search term
+                                                </Text>
+                                            </View>
+                                        ) : searchQuery.length > 0 ? (
+                                            <View style={styles.emptyContainer}>
+                                                <Text style={styles.emptySubText}>
+                                                    Type at least 3 characters to search
+                                                </Text>
+                                            </View>
+                                        ) : null
+                                    }
+                                />
+                            )}
+                        </>
+                    )}
+                </>
             )}
-
-            {!loading && !error && (
-                <FlatList
-                    data={users}
-                    renderItem={renderUserItem}
-                    keyExtractor={(item) => item._id}
-                    ListEmptyComponent={
-                        searchQuery.length > 2 ? (
-                            <Text style={styles.noResults}>No users found</Text>
-                        ) : null
-                    }
-                />
-            )}
-        </View>
+        </SafeAreaView>
     );
 };
 
@@ -193,73 +261,157 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
-    searchBar: {
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: normalize(16),
+        paddingVertical: normalize(12),
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 1,
+    },
+    backButton: {
+        padding: normalize(5),
+        marginRight: normalize(10),
+    },
+    headerTitle: {
+        fontSize: normalize(20),
+        fontWeight: 'bold',
+        color: '#3b0b40',
+    },
+    searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#f5f5f5',
-        margin: width * 0.025,
-        padding: width * 0.025,
-        borderRadius: width * 0.05,
+        borderRadius: normalize(8),
+        margin: normalize(16),
+        paddingHorizontal: normalize(12),
+        paddingVertical: normalize(8),
     },
     searchIcon: {
-        marginRight: 10,
+        marginRight: normalize(8),
     },
     searchInput: {
         flex: 1,
-        fontSize: width * 0.04,
+        fontSize: normalize(16),
+        color: '#333',
+        paddingVertical: normalize(8),
     },
-    userItem: {
-        flexDirection: 'row',
-        padding: width * 0.04,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        alignItems: 'center',
+    clearButton: {
+        padding: normalize(5),
     },
-    avatarContainer: {
-        marginRight: 15,
-    },
-    avatar: {
-        width: width * 0.125,
-        height: width * 0.125,
-        borderRadius: width * 0.0625,
-        backgroundColor: '#f0f0f0', // Fallback color
-    },
-    placeholderAvatar: {
-        backgroundColor: '#3b0b40',
+    loadingContainer: {
+        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    errorContainer: {
+        padding: normalize(16),
+        backgroundColor: '#ffeeee',
+        borderRadius: normalize(8),
+        margin: normalize(16),
+    },
+    errorText: {
+        color: '#cc0000',
+        textAlign: 'center',
+        fontSize: normalize(14),
+        lineHeight: normalize(20),
+    },
+    retryButton: {
+        backgroundColor: '#3b0b40',
+        paddingHorizontal: normalize(20),
+        paddingVertical: normalize(10),
+        borderRadius: normalize(8),
+        marginTop: normalize(16),
+        alignSelf: 'center',
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: normalize(16),
+        fontWeight: 'bold',
+    },
+    userList: {
+        paddingBottom: normalize(16),
+    },
+    userItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: normalize(16),
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    avatarContainer: {
+        width: normalize(50),
+        height: normalize(50),
+        borderRadius: normalize(25),
+        overflow: 'hidden',
+        backgroundColor: '#f0f0f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatar: {
+        width: normalize(50),
+        height: normalize(50),
+    },
+    placeholderAvatar: {
+        backgroundColor: '#3b0b40',
+    },
     avatarText: {
         color: '#fff',
-        fontSize: 20,
+        fontSize: normalize(18),
         fontWeight: 'bold',
     },
     userInfo: {
         flex: 1,
-        marginLeft: width * 0.03,
+        marginLeft: normalize(12),
     },
     userName: {
-        fontSize: width * 0.04,
+        fontSize: normalize(16),
         fontWeight: 'bold',
         color: '#333',
     },
     userEmail: {
-        fontSize: width * 0.035,
+        fontSize: normalize(14),
         color: '#666',
-        marginTop: height * 0.003,
+        marginTop: normalize(4),
     },
-    loader: {
-        marginTop: 20,
+    messageButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#3b0b40',
+        paddingHorizontal: normalize(12),
+        paddingVertical: normalize(8),
+        borderRadius: normalize(8),
+        marginLeft: 'auto',
     },
-    errorText: {
-        textAlign: 'center',
-        color: 'red',
-        margin: 20,
+    messageButtonText: {
+        color: '#fff',
+        fontSize: normalize(14),
+        marginLeft: normalize(4),
     },
-    noResults: {
-        textAlign: 'center',
-        margin: 20,
+    emptyContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: normalize(32),
+        flex: 1,
+        marginTop: normalize(50),
+    },
+    emptyText: {
+        fontSize: normalize(18),
+        fontWeight: 'bold',
         color: '#666',
+        marginTop: normalize(16),
+    },
+    emptySubText: {
+        fontSize: normalize(14),
+        color: '#999',
+        marginTop: normalize(8),
+        textAlign: 'center',
     },
 });
 

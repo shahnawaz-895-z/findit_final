@@ -4,25 +4,32 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
+import http from 'http';
+import { Server } from 'socket.io';
 import { User } from './userdetail.js';
 import FoundItem from './founditemschema.js';
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import LostItem from './lostitemschema.js';
-import { pipeline } from '@huggingface/transformers';
-import natural from 'natural';
-import compromise from 'compromise';
+import Message from './messageschema.js';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*', // Allow all origins (you can restrict this in production)
+        methods: ['GET', 'POST'],
+    },
+});
 
 // CORS configuration
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json());
@@ -32,19 +39,28 @@ const storage = multer.memoryStorage(); // Use memory storage instead of disk st
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
-    }
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
 });
 
 // MongoDB connection
 const connectDB = async () => {
     try {
+        console.log('Attempting to connect to MongoDB with URI:', process.env.MONGODB_URI);
         await mongoose.connect(process.env.MONGODB_URI, {
             serverSelectionTimeoutMS: 5000,
             socketTimeoutMS: 45000,
-            family: 4 // Force IPv4
+            family: 4, // Force IPv4
         });
         console.log('MongoDB connected successfully');
+        
+        // Test the connection by counting messages
+        const messageCount = await Message.countDocuments();
+        console.log(`Database contains ${messageCount} messages`);
+        
+        // Test the User model
+        const userCount = await User.countDocuments();
+        console.log(`Database contains ${userCount} users`);
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -53,42 +69,59 @@ const connectDB = async () => {
 
 // Monitor MongoDB connection
 mongoose.connection.on('connected', () => console.log('Mongoose connected to MongoDB Atlas'));
-mongoose.connection.on('error', err => console.error('Mongoose connection error:', err));
+mongoose.connection.on('error', (err) => console.error('Mongoose connection error:', err));
 mongoose.connection.on('disconnected', () => console.log('Mongoose disconnected'));
 
 // Connect to MongoDB
 connectDB();
 
-// **Fixed: Initialize the Hugging Face model with correct dtype and handle potential issues**
-{/* let similarityModel;
-(async () => {
-    try {
-        similarityModel = await pipeline('feature-extraction', 'sentence-transformers/all-MiniLM-L6-v2', {
-            device: 'cpu', // Ensuring CPU compatibility
-            dtype: 'auto'  // Fix dtype issue
-        });
-        console.log("Hugging Face Model Loaded Successfully.");
-    } catch (error) {
-        console.error("Error loading Hugging Face model:", error);
-        if (error.message.includes('Cannot read properties of undefined')) {
-            console.error("It seems like the model or its configuration is not properly defined.");
+// Socket.IO connection
+io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
+
+    // Join a room (user ID)
+    socket.on('joinRoom', (userId) => {
+        socket.join(userId);
+        console.log(`User ${userId} joined room`);
+    });
+
+    // Send and receive messages
+    socket.on('sendMessage', async (message) => {
+        try {
+            const { receiverId, senderId, text } = message;
+            console.log(`Received message from ${senderId} to ${receiverId}: ${text}`);
+            
+            // Save message to database
+            const newMessage = new Message({
+                senderId,
+                receiverId,
+                text,
+                createdAt: new Date(),
+                read: false
+            });
+            
+            const savedMessage = await newMessage.save();
+            console.log('Message saved to database:', savedMessage);
+            
+            // Emit the message to the receiver
+            io.to(receiverId).emit('receiveMessage', { 
+                _id: savedMessage._id,
+                senderId, 
+                text,
+                createdAt: savedMessage.createdAt
+            });
+            
+            console.log(`Message sent from ${senderId} to ${receiverId}: ${text}`);
+        } catch (error) {
+            console.error('Error saving message:', error);
         }
-    }
-})();
+    });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send({ status: 'error', message: 'Something broke!' });
+    // Handle disconnection
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+    });
 });
-
-// Routes
-app.get('/', (req, res) => {
-    res.status(200).send({ status: "Server is running" });
-});*/}
-
-// **Register Route**
-// Modify this section in app.js for the register route
 
 app.post('/register', upload.single('profileImage'), async (req, res) => {
     try {
@@ -447,19 +480,42 @@ app.get('/search-users', async (req, res) => {
 });
 // Add this near the other routes in app.js
 app.get('/api-test', (req, res) => {
+    res.status(200).json({
+        status: 'success',
+        message: 'API is working',
+        timestamp: new Date()
+    });
+});
+
+// Test endpoint to create a test message
+app.get('/api/create-test-message', async (req, res) => {
     try {
-        res.json({
+        // Create a test message
+        const testMessage = new Message({
+            senderId: '67b443f3a395bfa585014af8', // Use the user ID from your logs
+            receiverId: 'test-receiver-id',
+            text: 'This is a test message',
+            createdAt: new Date(),
+            read: false
+        });
+        
+        const savedMessage = await testMessage.save();
+        console.log('Test message created:', savedMessage);
+        
+        res.status(201).json({
             status: 'success',
-            message: 'API is working correctly'
+            message: 'Test message created',
+            data: savedMessage
         });
     } catch (error) {
-        console.error('API test error:', error);
+        console.error('Error creating test message:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Internal server error'
+            message: 'Failed to create test message'
         });
     }
 });
+
 // **Report Found Item**
 app.post('/reportfound', upload.single('photo'), async (req, res) => {
     try {
@@ -483,20 +539,53 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
 // **Report Lost Item**
 app.post('/reportlost', upload.single('photo'), async (req, res) => {
     try {
+        console.log('Received lost item report:', req.body);
         const { contact, location, time, date, description, category } = req.body;
-        if (!contact || !location || !time || !date || !description || !category) {
-            return res.status(400).json({ status: 'error', message: 'All fields are required' });
+        
+        // Validation with detailed error messages
+        const missingFields = [];
+        if (!contact) missingFields.push('contact');
+        if (!location) missingFields.push('location');
+        if (!time) missingFields.push('time');
+        if (!date) missingFields.push('date');
+        if (!description) missingFields.push('description');
+        if (!category) missingFields.push('category');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Missing required fields: ${missingFields.join(', ')}` 
+            });
+        }
+
+        let photoData = null;
+        if (req.file) {
+            photoData = req.file.buffer;
         }
 
         const lostItem = new LostItem({
-            contact, location, time, date, description, category,
-            photo: req.file ? fs.readFileSync(req.file.path) : null
+            contact,
+            location,
+            time,
+            date,
+            description,
+            category,
+            photo: photoData
         });
 
         await lostItem.save();
-        res.status(201).json({ status: 'success', message: 'Lost item reported successfully' });
+        res.status(201).json({ 
+            status: 'success', 
+            message: 'Lost item reported successfully',
+            itemId: lostItem._id 
+        });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: 'Server error while reporting lost item' });
+        console.error('Error reporting lost item:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Server error while reporting lost item',
+            details: error.message 
+        });
     }
 });
 
@@ -520,8 +609,248 @@ app.post('/matchingfounditems', async (req, res) => {
     }
 });
 
+// **Message API endpoints**
+app.get('/api/messages/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Fetching conversations for user: ${userId}`);
+        
+        // Find all conversations where the user is either sender or receiver
+        const messages = await Message.find({
+            $or: [
+                { senderId: userId },
+                { receiverId: userId }
+            ]
+        }).sort({ createdAt: -1 });
+        
+        console.log(`Found ${messages.length} messages for user ${userId}`);
+        
+        // Group messages by conversation partner
+        const conversationMap = new Map();
+        
+        for (const message of messages) {
+            // Determine the conversation partner ID
+            const partnerId = message.senderId === userId ? message.receiverId : message.senderId;
+            
+            // If this is the first message we've seen for this conversation, add it
+            if (!conversationMap.has(partnerId)) {
+                conversationMap.set(partnerId, message);
+            }
+        }
+        
+        console.log(`Grouped into ${conversationMap.size} conversations`);
+        
+        // Convert the map to an array of conversations
+        const conversations = [];
+        
+        for (const [partnerId, lastMessage] of conversationMap.entries()) {
+            try {
+                // Look up the user details - try with both string and ObjectId
+                let partner;
+                try {
+                    // First try with the ID as is
+                    partner = await User.findOne({ _id: partnerId });
+                } catch (err) {
+                    console.log(`Error finding user with ID ${partnerId}, trying alternative formats`);
+                }
+                
+                if (!partner) {
+                    // If not found, try with string ID
+                    try {
+                        partner = await User.findOne({ _id: partnerId.toString() });
+                    } catch (err) {
+                        console.log(`Error finding user with string ID ${partnerId}`);
+                    }
+                }
+                
+                if (partner) {
+                    console.log(`Found user details for ${partnerId}: ${partner.name}`);
+                    
+                    // Process the profile image if it exists
+                    let avatar = null;
+                    if (partner.profileImage) {
+                        // If it's already a data URI or URL, use it as is
+                        if (typeof partner.profileImage === 'string' && 
+                            (partner.profileImage.startsWith('data:') || partner.profileImage.startsWith('http'))) {
+                            avatar = partner.profileImage;
+                        } else {
+                            // Otherwise, it's likely a Buffer or base64 string
+                            avatar = partner.profileImage;
+                        }
+                    }
+                    
+                    conversations.push({
+                        id: partnerId,
+                        name: partner.name || 'Unknown User',
+                        lastMessage: lastMessage.text,
+                        time: formatMessageTime(lastMessage.createdAt),
+                        avatar: avatar,
+                        unread: !lastMessage.read && lastMessage.receiverId === userId
+                    });
+                } else {
+                    console.log(`No user details found for ${partnerId}`);
+                    
+                    // Include the conversation even if we can't find the user
+                    conversations.push({
+                        id: partnerId,
+                        name: 'Unknown User',
+                        lastMessage: lastMessage.text,
+                        time: formatMessageTime(lastMessage.createdAt),
+                        avatar: null,
+                        unread: !lastMessage.read && lastMessage.receiverId === userId
+                    });
+                }
+            } catch (error) {
+                console.error(`Error looking up user ${partnerId}:`, error);
+                
+                // Still include the conversation even if there's an error
+                conversations.push({
+                    id: partnerId,
+                    name: 'Unknown User',
+                    lastMessage: lastMessage.text,
+                    time: formatMessageTime(lastMessage.createdAt),
+                    avatar: null,
+                    unread: !lastMessage.read && lastMessage.receiverId === userId
+                });
+            }
+        }
+        
+        console.log(`Returning ${conversations.length} formatted conversations`);
+        res.status(200).json(conversations);
+    } catch (error) {
+        console.error('Error fetching conversations:', error);
+        res.status(500).json({ message: 'Failed to fetch conversations' });
+    }
+});
+
+app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
+    try {
+        const { userId, otherUserId } = req.params;
+        console.log(`Fetching messages between ${userId} and ${otherUserId}`);
+        
+        // Find all messages between the two users
+        const messages = await Message.find({
+            $or: [
+                { senderId: userId, receiverId: otherUserId },
+                { senderId: otherUserId, receiverId: userId }
+            ]
+        }).sort({ createdAt: -1 }); // Sort by createdAt in descending order (newest first)
+        
+        console.log(`Found ${messages.length} messages between ${userId} and ${otherUserId}`);
+        
+        // Format messages for GiftedChat
+        const formattedMessages = messages.map(msg => ({
+            _id: msg._id.toString(),
+            text: msg.text,
+            createdAt: msg.createdAt,
+            user: {
+                _id: msg.senderId,
+                // We don't have name and avatar here, client will need to handle that
+            },
+            received: true,
+            sent: true
+        }));
+        
+        // Mark messages as read
+        const updateResult = await Message.updateMany(
+            { senderId: otherUserId, receiverId: userId, read: false },
+            { $set: { read: true } }
+        );
+        
+        console.log(`Marked ${updateResult.modifiedCount} messages as read`);
+        
+        res.status(200).json(formattedMessages);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).json({ message: 'Failed to fetch messages' });
+    }
+});
+
+// API endpoint for directly saving messages
+app.post('/api/messages', async (req, res) => {
+    try {
+        const { senderId, receiverId, text } = req.body;
+        
+        if (!senderId || !receiverId || !text) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Missing required fields: senderId, receiverId, text' 
+            });
+        }
+        
+        console.log(`API: Saving message from ${senderId} to ${receiverId}: ${text}`);
+        
+        // Create and save the message
+        const newMessage = new Message({
+            senderId,
+            receiverId,
+            text,
+            createdAt: new Date(),
+            read: false
+        });
+        
+        const savedMessage = await newMessage.save();
+        console.log('Message saved to database via API:', savedMessage);
+        
+        // Emit the message via Socket.IO for real-time delivery
+        io.to(receiverId).emit('receiveMessage', { 
+            _id: savedMessage._id,
+            senderId, 
+            text,
+            createdAt: savedMessage.createdAt
+        });
+        
+        res.status(201).json({
+            status: 'success',
+            message: 'Message saved successfully',
+            data: savedMessage
+        });
+    } catch (error) {
+        console.error('Error saving message via API:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Failed to save message' 
+        });
+    }
+});
+
+// Helper function to format message time
+function formatMessageTime(date) {
+    const now = new Date();
+    const messageDate = new Date(date);
+    const diffInDays = Math.floor((now - messageDate) / (1000 * 60 * 60 * 24));
+    
+    if (diffInDays === 0) {
+        // Today: show time
+        return messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffInDays === 1) {
+        // Yesterday
+        return 'Yesterday';
+    } else if (diffInDays < 7) {
+        // Within a week: show day name
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        return days[messageDate.getDay()];
+    } else {
+        // Older: show date
+        return messageDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+}
+
 // **Start Server**
-const PORT = process.env.PORT || 5001;
-app.listen(PORT, '0.0.0.0', () => {
+const PORT = process.env.PORT || 5000;
+
+server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
+        // Try the next port
+        server.listen(PORT + 1, '0.0.0.0', () => {
+            console.log(`Server running on http://0.0.0.0:${PORT + 1}`);
+        });
+    } else {
+        console.error('Server error:', error);
+    }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 });

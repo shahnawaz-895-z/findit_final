@@ -10,11 +10,11 @@ import HomePage from './screens/Homepage.js';
 import ReportFoundItem from './screens/ReportFoundItem';
 import ReportLostItem from './screens/ReportLostItem';
 import ShowFoundItemData from './screens/Showfounditemdata';
-import LostItemReporting from './screens/LostItemReporting.js';
+
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
 import SearchScreen from './screens/SearchScreen.js';
-
+import ChatListScreen from './screens/ChatListScreen.js';
 const Stack = createStackNavigator();
 
 const screenOptions = {
@@ -57,13 +57,13 @@ export default function App() {
           <Stack.Screen name="ReportFoundItem" component={ReportFoundItem} />
           <Stack.Screen name="ReportLostItem" component={ReportLostItem} />
           <Stack.Screen name="ShowFoundItemData" component={ShowFoundItemData} />
-          <Stack.Screen name="LostItemReporting" component={LostItemReporting} />
           <Stack.Screen 
             name="ProfileScreen" component={ProfileScreen} 
             options={{ headerShown: true, animationEnabled: true, gestureEnabled: true }} 
           />
           <Stack.Screen name="ChatScreen" component={ChatScreen} />
           <Stack.Screen name="SearchScreen" component={SearchScreen} />
+          <Stack.Screen name="ChatListScreen" component={ChatListScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
