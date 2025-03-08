@@ -20,11 +20,19 @@ const messageSchema = new mongoose.Schema({
     read: {
         type: Boolean,
         default: false
+    },
+    clientMessageId: {
+        type: String,
+        index: true,
+        sparse: true
     }
 });
 
 // Create a compound index for efficient querying of conversations
 messageSchema.index({ senderId: 1, receiverId: 1 });
+
+// Create an index for client message ID for duplicate detection
+messageSchema.index({ clientMessageId: 1 }, { unique: true, sparse: true });
 
 const Message = mongoose.model('Message', messageSchema);
 

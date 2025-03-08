@@ -95,8 +95,27 @@ io.on('connection', (socket) => {
     // Send and receive messages
     socket.on('sendMessage', async (message) => {
         try {
-            const { receiverId, senderId, text } = message;
+            const { receiverId, senderId, text, messageId } = message;
             console.log(`Received message from ${senderId} to ${receiverId}: ${text}`);
+            
+            // Check if a message with this client-generated ID already exists
+            if (messageId) {
+                const existingMessage = await Message.findOne({ clientMessageId: messageId });
+                if (existingMessage) {
+                    console.log(`Message with ID ${messageId} already exists, skipping duplicate`);
+                    
+                    // Emit the existing message back to the sender for confirmation
+                    io.to(senderId).emit('messageSaved', { 
+                        _id: existingMessage._id,
+                        senderId, 
+                        text,
+                        createdAt: existingMessage.createdAt,
+                        clientMessageId: messageId
+                    });
+                    
+                    return;
+                }
+            }
             
             // Save message to database
             const newMessage = new Message({
@@ -104,7 +123,8 @@ io.on('connection', (socket) => {
                 receiverId,
                 text,
                 createdAt: new Date(),
-                read: false
+                read: false,
+                clientMessageId: messageId || null // Store the client-generated ID if provided
             });
             
             const savedMessage = await newMessage.save();
@@ -115,7 +135,17 @@ io.on('connection', (socket) => {
                 _id: savedMessage._id,
                 senderId, 
                 text,
-                createdAt: savedMessage.createdAt
+                createdAt: savedMessage.createdAt,
+                clientMessageId: messageId
+            });
+            
+            // Emit confirmation back to the sender
+            io.to(senderId).emit('messageSaved', { 
+                _id: savedMessage._id,
+                senderId, 
+                text,
+                createdAt: savedMessage.createdAt,
+                clientMessageId: messageId
             });
             
             console.log(`Message sent from ${senderId} to ${receiverId}: ${text}`);
@@ -526,19 +556,91 @@ app.get('/api/create-test-message', async (req, res) => {
 // **Report Found Item**
 app.post('/reportfound', upload.single('photo'), async (req, res) => {
     try {
-        const { contact, location, time, date, description } = req.body;
-        if (!contact || !location || !time || !date || !description) {
+        console.log('Received found item report:', req.body);
+        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
+        
+        // Log the user ID for debugging
+        console.log(`User ID from request: ${userId}`);
+        
+        // Validation with detailed error messages
+        const missingFields = [];
+        if (!contact) missingFields.push('contact');
+        if (!location) missingFields.push('location');
+        if (!time) missingFields.push('time');
+        if (!date) missingFields.push('date');
+        if (!description) missingFields.push('description');
+        if (!category) missingFields.push('category');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Missing required fields: ${missingFields.join(', ')}` 
+            });
+        }
+
+        let photoData = null;
+        if (req.file) {
+            photoData = req.file.buffer;
+        }
+
+        const foundItem = new FoundItem({
+            contact, 
+            location, 
+            time, 
+            date, 
+            description,
+            category,
+            userId: userId || null,
+            itemName: itemName || description.substring(0, 30),
+            coordinates: {
+                latitude: latitude || null,
+                longitude: longitude || null
+            },
+            photo: photoData
+        });
+
+        const savedItem = await foundItem.save();
+        console.log(`Found item saved with ID: ${savedItem._id}, User ID: ${savedItem.userId}`);
+        
+        res.status(201).json({ 
+            status: 'success', 
+            message: 'Found item reported successfully',
+            itemId: savedItem._id
+        });
+    } catch (error) {
+        console.error('Error reporting found item:', error);
+        res.status(500).json({ status: 'error', message: 'Server error reporting found item' });
+    }
+});
+
+// Add alias for /founditem to match frontend
+app.post('/founditem', upload.single('photo'), async (req, res) => {
+    try {
+        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
+        if (!contact || !location || !time || !date || !description || !category) {
             return res.status(400).json({ status: 'error', message: 'All fields are required' });
         }
 
         const foundItem = new FoundItem({
-            contact, location, time, date, description,
-            photo: req.file ? fs.readFileSync(req.file.path) : null
+            contact, 
+            location, 
+            time, 
+            date, 
+            description,
+            category,
+            userId: userId || null,
+            itemName: itemName || description.substring(0, 30),
+            coordinates: {
+                latitude: latitude || null,
+                longitude: longitude || null
+            },
+            photo: req.file ? req.file.buffer : null
         });
 
         await foundItem.save();
         res.status(201).json({ status: 'success', message: 'Found item reported successfully' });
     } catch (error) {
+        console.error('Error reporting found item:', error);
         res.status(500).json({ status: 'error', message: 'Server error reporting found item' });
     }
 });
@@ -547,7 +649,10 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
 app.post('/reportlost', upload.single('photo'), async (req, res) => {
     try {
         console.log('Received lost item report:', req.body);
-        const { contact, location, time, date, description, category } = req.body;
+        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
+        
+        // Log the user ID for debugging
+        console.log(`User ID from request: ${userId}`);
         
         // Validation with detailed error messages
         const missingFields = [];
@@ -577,22 +682,77 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
             date,
             description,
             category,
+            userId: userId || null,
+            itemName: itemName || description.substring(0, 30),
+            coordinates: {
+                latitude: latitude || null,
+                longitude: longitude || null
+            },
+            photo: photoData
+        });
+
+        const savedItem = await lostItem.save();
+        console.log(`Lost item saved with ID: ${savedItem._id}, User ID: ${savedItem.userId}`);
+        
+        res.status(201).json({ 
+            status: 'success', 
+            message: 'Lost item reported successfully',
+            itemId: savedItem._id
+        });
+    } catch (error) {
+        console.error('Error reporting lost item:', error);
+        res.status(500).json({ status: 'error', message: 'Server error reporting lost item' });
+    }
+});
+
+// Add alias for /lostitem to match frontend
+app.post('/lostitem', upload.single('photo'), async (req, res) => {
+    try {
+        console.log('Received lost item report:', req.body);
+        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
+        
+        // Validation with detailed error messages
+        const missingFields = [];
+        if (!contact) missingFields.push('contact');
+        if (!location) missingFields.push('location');
+        if (!time) missingFields.push('time');
+        if (!date) missingFields.push('date');
+        if (!description) missingFields.push('description');
+        if (!category) missingFields.push('category');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: `Missing required fields: ${missingFields.join(', ')}` 
+            });
+        }
+
+        let photoData = null;
+        if (req.file) {
+            photoData = req.file.buffer;
+        }
+
+        const lostItem = new LostItem({
+            contact,
+            location,
+            time,
+            date,
+            description,
+            category,
+            userId: userId || null,
+            itemName: itemName || description.substring(0, 30),
+            coordinates: {
+                latitude: latitude || null,
+                longitude: longitude || null
+            },
             photo: photoData
         });
 
         await lostItem.save();
-        res.status(201).json({ 
-            status: 'success', 
-            message: 'Lost item reported successfully',
-            itemId: lostItem._id 
-        });
+        res.status(201).json({ status: 'success', message: 'Lost item reported successfully' });
     } catch (error) {
         console.error('Error reporting lost item:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Server error while reporting lost item',
-            details: error.message 
-        });
+        res.status(500).json({ status: 'error', message: 'Server error reporting lost item' });
     }
 });
 
@@ -795,6 +955,14 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
         const { userId, otherUserId } = req.params;
         console.log(`Fetching messages between ${userId} and ${otherUserId}`);
         
+        // Validate user IDs
+        if (!userId || !otherUserId) {
+            return res.status(400).json({ 
+                error: 'Missing user IDs',
+                messages: [] 
+            });
+        }
+        
         // Find all messages between the two users
         const messages = await Message.find({
             $or: [
@@ -819,24 +987,30 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
         }));
         
         // Mark messages as read
-        const updateResult = await Message.updateMany(
-            { senderId: otherUserId, receiverId: userId, read: false },
-            { $set: { read: true } }
-        );
-        
-        console.log(`Marked ${updateResult.modifiedCount} messages as read`);
+        try {
+            const updateResult = await Message.updateMany(
+                { senderId: otherUserId, receiverId: userId, read: false },
+                { $set: { read: true } }
+            );
+            
+            console.log(`Marked ${updateResult.modifiedCount} messages as read`);
+        } catch (markError) {
+            console.error('Error marking messages as read:', markError);
+            // Continue anyway, this is not critical
+        }
         
         res.status(200).json(formattedMessages);
     } catch (error) {
         console.error('Error fetching messages:', error);
-        res.status(500).json({ message: 'Failed to fetch messages' });
+        // Return an empty array instead of an error to prevent app crashes
+        res.status(200).json([]);
     }
 });
 
 // API endpoint for directly saving messages
 app.post('/api/messages', async (req, res) => {
     try {
-        const { senderId, receiverId, text } = req.body;
+        const { senderId, receiverId, text, messageId } = req.body;
         
         if (!senderId || !receiverId || !text) {
             return res.status(400).json({ 
@@ -847,25 +1021,45 @@ app.post('/api/messages', async (req, res) => {
         
         console.log(`API: Saving message from ${senderId} to ${receiverId}: ${text}`);
         
+        // Check if a message with this client-generated ID already exists
+        if (messageId) {
+            const existingMessage = await Message.findOne({ clientMessageId: messageId });
+            if (existingMessage) {
+                console.log(`Message with ID ${messageId} already exists, skipping duplicate`);
+                return res.status(200).json({
+                    status: 'success',
+                    message: 'Message already exists',
+                    data: existingMessage
+                });
+            }
+        }
+        
         // Create and save the message
         const newMessage = new Message({
             senderId,
             receiverId,
             text,
             createdAt: new Date(),
-            read: false
+            read: false,
+            clientMessageId: messageId || null // Store the client-generated ID if provided
         });
         
         const savedMessage = await newMessage.save();
         console.log('Message saved to database via API:', savedMessage);
         
         // Emit the message via Socket.IO for real-time delivery
-        io.to(receiverId).emit('receiveMessage', { 
-            _id: savedMessage._id,
-            senderId, 
-            text,
-            createdAt: savedMessage.createdAt
-        });
+        try {
+            io.to(receiverId).emit('receiveMessage', { 
+                _id: savedMessage._id,
+                senderId, 
+                text,
+                createdAt: savedMessage.createdAt,
+                clientMessageId: messageId // Include the client-generated ID
+            });
+        } catch (socketError) {
+            console.error('Error emitting message via Socket.IO:', socketError);
+            // Continue anyway, the message is saved in the database
+        }
         
         res.status(201).json({
             status: 'success',
@@ -1234,22 +1428,82 @@ app.get('/user-matches/:userId', async (req, res) => {
             });
         }
         
+        console.log(`Fetching matches for user: ${userId}`);
+        
         // Find all lost items by this user
-        const userLostItems = await LostItem.find({ user: userId });
+        const userLostItems = await LostItem.find({ userId: userId });
+        
+        console.log(`Found ${userLostItems.length} lost items for user ${userId}`);
         
         if (userLostItems.length === 0) {
-            return res.json({
-                status: 'success',
-                matches: [],
-                message: 'No lost items found for this user'
-            });
+            // If no lost items, try to find all lost items (for testing)
+            console.log("No lost items found for this user. Fetching all lost items for testing...");
+            const allLostItems = await LostItem.find({});
+            
+            if (allLostItems.length > 0) {
+                console.log(`Found ${allLostItems.length} lost items in total`);
+                userLostItems.push(...allLostItems);
+            } else {
+                return res.json({
+                    status: 'success',
+                    matches: [],
+                    message: 'No lost items found in the system'
+                });
+            }
         }
         
         // Array to store all matches
         let allMatches = [];
         
+        // Find all users to get their names
+        const users = await User.find({});
+        console.log(`Found ${users.length} users for name mapping`);
+        
+        // Create a map of user IDs to user info
+        const userMap = {};
+        users.forEach(user => {
+            // Ensure we have a valid user ID as the key
+            if (user && user._id) {
+                const userId = user._id.toString();
+                
+                // Process the profile image
+                let avatarUrl = null;
+                
+                // If profileImage is a base64 string
+                if (user.profileImage && typeof user.profileImage === 'string') {
+                    // If it's already a data URI or URL, use it as is
+                    if (user.profileImage.startsWith('data:') || user.profileImage.startsWith('http')) {
+                        avatarUrl = user.profileImage;
+                    } else {
+                        // It's a base64 string without prefix, add the prefix
+                        const imageType = user.profileImageType || 'image/jpeg';
+                        avatarUrl = `data:${imageType};base64,${user.profileImage}`;
+                    }
+                } else if (user.profileImage && Buffer.isBuffer(user.profileImage)) {
+                    // If it's a Buffer, convert to base64
+                    const imageType = user.profileImageType || 'image/jpeg';
+                    avatarUrl = `data:${imageType};base64,${user.profileImage.toString('base64')}`;
+                }
+                
+                // Use a default avatar if none is provided
+                if (!avatarUrl) {
+                    avatarUrl = 'https://randomuser.me/api/portraits/lego/1.jpg';
+                }
+                
+                userMap[userId] = {
+                    name: user.name || user.email || 'Unknown User',
+                    email: user.email || '',
+                    profileImage: avatarUrl
+                };
+                
+                console.log(`User ${userId} mapped to name: ${userMap[userId].name}, avatar: ${avatarUrl ? 'Valid avatar URL' : 'No avatar'}`);
+            }
+        });
+        
         // For each lost item, find potential matches
         for (const lostItem of userLostItems) {
+            console.log(`Processing lost item: ${lostItem._id}, description: ${lostItem.description}`);
+            
             // Build query for matching found items
             const query = {};
             
@@ -1269,8 +1523,15 @@ app.get('/user-matches/:userId', async (req, res) => {
                 query.category = lostItem.category;
             }
             
-            // Find matching found items
-            const matchedItems = await FoundItem.find(query).populate('user', 'name email profileImage');
+            // IMPORTANT: For testing, don't exclude items from the same user
+            // This will show all potential matches regardless of user ID
+            // query.userId = { $ne: userId }; // Only match items from other users
+            
+            console.log(`Searching for matches with query:`, JSON.stringify(query));
+            
+            const matchedItems = await FoundItem.find(query);
+            
+            console.log(`Found ${matchedItems.length} potential matches`);
             
             if (matchedItems.length > 0) {
                 // Calculate match score for each item
@@ -1280,15 +1541,13 @@ app.get('/user-matches/:userId', async (req, res) => {
                     
                     // Description similarity (50%)
                     if (lostItem.description && foundItem.description) {
-                        const descWords = lostItem.description.toLowerCase().split(/\s+/);
-                        const foundDescWords = foundItem.description.toLowerCase().split(/\s+/);
+                        const similarityScore = calculateTextSimilarity(lostItem.description, foundItem.description);
+                        score += similarityScore * 50;
                         
-                        const matchingWords = descWords.filter(word => 
-                            word.length > 3 && foundDescWords.includes(word)
-                        ).length;
-                        
-                        const matchPercentage = matchingWords / Math.max(descWords.length, 1);
-                        score += matchPercentage * 50;
+                        // Bonus points for very similar descriptions
+                        if (similarityScore > 0.5) {
+                            score += 10; // Bonus points for high similarity
+                        }
                     }
                     
                     // Location similarity (30%)
@@ -1310,7 +1569,17 @@ app.get('/user-matches/:userId', async (req, res) => {
                         score += 20;
                     }
                     
-                    // Create match object
+                    // Get user info from the map
+                    const foundByUserId = foundItem.userId ? foundItem.userId.toString() : 'unknown';
+                    const userInfo = userMap[foundByUserId] || {
+                        name: `User ${foundByUserId.substring(0, 5)}`,
+                        email: '',
+                        profileImage: 'https://randomuser.me/api/portraits/lego/1.jpg'
+                    };
+                    
+                    console.log(`Match found: Item ${foundItem._id} by user ${foundByUserId}, avatar: ${userInfo.profileImage}`);
+                    
+                    // Create match object with foundByUser info
                     return {
                         id: `${lostItem._id}-${foundItem._id}`,
                         lostItemId: lostItem._id,
@@ -1322,15 +1591,18 @@ app.get('/user-matches/:userId', async (req, res) => {
                         matchConfidence: Math.min(Math.round(score), maxScore),
                         status: 'pending', // Default status
                         foundByUser: {
-                            id: foundItem.user._id,
-                            name: foundItem.user.name,
-                            avatar: foundItem.user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+                            id: foundByUserId,
+                            name: userInfo.name,
+                            email: userInfo.email,
+                            avatar: userInfo.profileImage
                         }
                     };
                 });
                 
-                // Filter to good matches only (score > 30)
-                const goodMatches = scoredMatches.filter(match => match.matchConfidence > 30);
+                // Lower the threshold for testing
+                const goodMatches = scoredMatches.filter(match => match.matchConfidence > 20);
+                
+                console.log(`Found ${goodMatches.length} good matches with score > 20`);
                 
                 // Add to all matches
                 allMatches = [...allMatches, ...goodMatches];
@@ -1351,7 +1623,8 @@ app.get('/user-matches/:userId', async (req, res) => {
         console.error('Error fetching user matches:', error);
         return res.status(500).json({
             status: 'error',
-            message: 'Error fetching user matches'
+            message: 'Error fetching user matches',
+            details: error.message
         });
     }
 });
@@ -1374,3 +1647,32 @@ server.on('error', (error) => {
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+
+// Helper function to normalize text for better matching
+function normalizeText(text) {
+    if (!text) return '';
+    return text.toLowerCase()
+        .replace(/[^\w\s]/g, '') // Remove punctuation
+        .replace(/\s+/g, ' ')    // Replace multiple spaces with single space
+        .trim();
+}
+
+// Helper function to calculate similarity between two texts
+function calculateTextSimilarity(text1, text2) {
+    const normalizedText1 = normalizeText(text1);
+    const normalizedText2 = normalizeText(text2);
+    
+    if (!normalizedText1 || !normalizedText2) return 0;
+    
+    // Split into words
+    const words1 = normalizedText1.split(/\s+/);
+    const words2 = normalizedText2.split(/\s+/);
+    
+    // Count matching words
+    const matchingWords = words1.filter(word => 
+        word.length > 2 && words2.includes(word)
+    ).length;
+    
+    // Calculate percentage
+    return matchingWords / Math.max(words1.length, 1);
+}

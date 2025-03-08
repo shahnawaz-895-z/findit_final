@@ -290,6 +290,15 @@ const ReportLostItem = () => {
     setIsLoading(true);
 
     try {
+      // Get user ID from AsyncStorage
+      const userData = await AsyncStorage.getItem('userData');
+      let userId = null;
+      
+      if (userData) {
+        const parsedUserData = JSON.parse(userData);
+        userId = parsedUserData._id;
+      }
+
       // Create the request body
       const formData = new FormData();
       formData.append('contact', contact);
@@ -299,6 +308,11 @@ const ReportLostItem = () => {
       formData.append('time', time.toISOString());
       formData.append('date', date.toISOString());
       formData.append('itemName', itemName);
+      
+      // Add user ID if available
+      if (userId) {
+        formData.append('userId', userId);
+      }
       
       // Add coordinates if available
       if (selectedLocation) {
@@ -345,7 +359,7 @@ const ReportLostItem = () => {
       await addToRecentActivity();
 
       // Send the data to the backend
-      const response = await axios.post(`${BACKEND_URL}/lostitem`, formData, {
+      const response = await axios.post(`${BACKEND_URL}/reportlost`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

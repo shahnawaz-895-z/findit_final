@@ -191,11 +191,9 @@ const ChatListScreen = ({ navigation }) => {
                 onPress={() => {
                     console.log('Navigating to chat with user:', item.id);
                     navigation.navigate('ChatScreen', { 
-                        user: {
-                            id: item.id,
-                            name: item.name,
-                            avatar: avatarUri
-                        } 
+                        recipientId: item.id,
+                        recipientName: item.name,
+                        recipientAvatar: avatarUri
                     });
                 }}
             >
@@ -220,20 +218,20 @@ const ChatListScreen = ({ navigation }) => {
                         <Text style={styles.chatName} numberOfLines={1}>
                             {item.name}
                         </Text>
-                        <Text style={styles.chatTime}>
-                            {item.time}
-                        </Text>
+                        <Text style={styles.chatTime}>{item.time}</Text>
                     </View>
-                    <Text 
-                        style={[
-                            styles.lastMessage, 
-                            item.unread && styles.unreadMessage
-                        ]}
-                        numberOfLines={1}
-                    >
+                    <Text style={[
+                        styles.lastMessage, 
+                        item.unread && styles.unreadMessage
+                    ]} numberOfLines={1}>
                         {item.lastMessage}
                     </Text>
                 </View>
+                
+                {/* Unread indicator */}
+                {item.unread && (
+                    <View style={styles.unreadIndicator} />
+                )}
             </TouchableOpacity>
         );
     };
@@ -457,6 +455,13 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: normalize(16),
         fontWeight: 'bold',
+    },
+    unreadIndicator: {
+        width: normalize(10),
+        height: normalize(10),
+        borderRadius: normalize(5),
+        backgroundColor: '#000',
+        marginLeft: normalize(8),
     },
 });
 

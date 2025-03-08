@@ -60,29 +60,40 @@ const MatchDetailsScreen = ({ route, navigation }) => {
     }, [match, routeLostItemId, routeFoundItemId]);
     
     const setUpMatchFromObject = (matchObj) => {
+        console.log('Setting up match from object:', matchObj);
+        
         // Create lostItem and foundItem objects from match data
         setLostItem({
             _id: matchObj.lostItemId,
             description: matchObj.lostItemDescription,
-            category: 'Personal Item',
-            location: 'Not specified',
-            date: new Date().toISOString(),
+            category: matchObj.category || 'Personal Item',
+            location: matchObj.lostLocation || 'Not specified',
+            date: matchObj.lostDate || new Date().toISOString(),
             user: {
-                _id: 'u1',
+                _id: userId || 'u1',
                 name: 'You',
                 email: 'user@example.com'
             }
         });
         
+        // Make sure we have the foundByUser data
+        const foundByUser = matchObj.foundByUser || {};
+        
         setFoundItem({
             _id: matchObj.foundItemId,
             description: matchObj.foundItemDescription,
-            category: 'Personal Item',
-            location: matchObj.foundLocation,
-            date: matchObj.foundDate,
-            user: matchObj.foundByUser
+            category: matchObj.category || 'Personal Item',
+            location: matchObj.foundLocation || 'Not specified',
+            date: matchObj.foundDate || new Date().toISOString(),
+            contact: foundByUser.contact || matchObj.contact || 'Not provided',
+            foundByUser: {
+                id: foundByUser.id || 'unknown',
+                name: foundByUser.name || 'Unknown User',
+                avatar: foundByUser.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg'
+            }
         });
         
+        console.log('Founder data:', foundItem?.foundByUser);
         setLoading(false);
     };
     
@@ -217,17 +228,31 @@ const MatchDetailsScreen = ({ route, navigation }) => {
             return;
         }
         
-        if (!foundItem || !foundItem.user) {
-            Alert.alert('Error', 'Finder information is not available.');
+        if (!foundItem || !foundItem.foundByUser) {
+            Alert.alert('Error', 'Founder information is not available.');
             return;
         }
         
+        console.log('Navigating to chat with:', foundItem.foundByUser);
+        
+        // Ensure we have a valid avatar URL
+        const avatarUrl = foundItem.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
+        
         // Navigate to chat screen with the contact information
         navigation.navigate('ChatScreen', {
-            recipientId: foundItem.user._id,
-            recipientName: foundItem.user.name,
-            recipientAvatar: foundItem.user.avatar,
-            initialMessage: `Hi, I saw your post about finding a "${foundItem.description}". I think it might be mine. I lost "${lostItem?.description}".`
+            recipientId: foundItem.foundByUser.id,
+            recipientName: foundItem.foundByUser.name || 'Unknown User',
+            recipientAvatar: avatarUrl,
+            matchId: match?.id || 'unknown',
+            itemDescription: foundItem.description || 'Found item',
+            // Include additional context about the match
+            matchContext: {
+                matchConfidence: matchScore || 0,
+                lostItemDescription: lostItem?.description || '',
+                foundItemDescription: foundItem?.description || '',
+                foundLocation: foundItem?.location || '',
+                foundDate: foundItem?.date || ''
+            }
         });
     };
     
@@ -309,6 +334,20 @@ const MatchDetailsScreen = ({ route, navigation }) => {
     const formatDate = (dateString) => {
         const date = new Date(dateString);
         return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+    
+    // Add this function to handle avatar loading errors
+    const handleAvatarError = () => {
+        console.log(`Avatar loading error for match details`);
+        if (foundItem && foundItem.foundByUser) {
+            setFoundItem({
+                ...foundItem,
+                foundByUser: {
+                    ...foundItem.foundByUser,
+                    avatar: 'https://randomuser.me/api/portraits/lego/1.jpg'
+                }
+            });
+        }
     };
     
     if (loading) {
@@ -424,17 +463,35 @@ const MatchDetailsScreen = ({ route, navigation }) => {
                     </View>
                 </View>
                 
-                <View style={styles.finderInfoContainer}>
-                    <Text style={styles.sectionTitle}>Finder Information</Text>
-                    <View style={styles.finderCard}>
-                        <Image 
-                            source={{ uri: foundItem?.user?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg' }} 
-                            style={styles.finderAvatar} 
-                        />
-                        <View style={styles.finderDetails}>
-                            <Text style={styles.finderName}>{foundItem?.user?.name || 'Anonymous Finder'}</Text>
-                            <Text style={styles.finderContact}>{foundItem?.user?.email || 'Contact via app'}</Text>
+                <View style={styles.founderSection}>
+                    <Text style={styles.sectionTitle}>Found By</Text>
+                    <View style={styles.founderCard}>
+                        <View style={styles.avatarContainer}>
+                            {foundItem?.foundByUser?.avatar ? (
+                                <Image 
+                                    source={{ uri: foundItem.foundByUser.avatar }} 
+                                    style={styles.founderAvatar}
+                                    onError={handleAvatarError}
+                                />
+                            ) : (
+                                <View style={styles.placeholderAvatar}>
+                                    <Text style={styles.avatarInitial}>
+                                        {foundItem?.foundByUser?.name ? foundItem.foundByUser.name.charAt(0).toUpperCase() : '?'}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
+                        <View style={styles.founderInfo}>
+                            <Text style={styles.founderName}>{foundItem?.foundByUser?.name || 'Unknown User'}</Text>
+                            <Text style={styles.founderContact}>Contact: {foundItem?.contact || 'Not provided'}</Text>
+                        </View>
+                        <TouchableOpacity 
+                            style={styles.contactButton}
+                            onPress={handleContactOwner}
+                        >
+                            <Ionicons name="chatbubble-ellipses" size={24} color="#fff" />
+                            <Text style={styles.contactButtonText}>Contact</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
                 
@@ -450,7 +507,7 @@ const MatchDetailsScreen = ({ route, navigation }) => {
                     )}
                     
                     <TouchableOpacity 
-                        style={[styles.actionButton, styles.contactButton]}
+                        style={[styles.actionButton, styles.contactButtonLarge]}
                         onPress={handleContactOwner}
                     >
                         <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
@@ -602,7 +659,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#e1e1e1',
         marginHorizontal: 8,
     },
-    finderInfoContainer: {
+    founderSection: {
         padding: 16,
     },
     sectionTitle: {
@@ -611,7 +668,7 @@ const styles = StyleSheet.create({
         color: '#333',
         marginBottom: 12,
     },
-    finderCard: {
+    founderCard: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#fff',
@@ -623,22 +680,44 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 2,
     },
-    finderAvatar: {
+    avatarContainer: {
         width: 60,
         height: 60,
         borderRadius: 30,
-        marginRight: 16,
+        overflow: 'hidden',
+        backgroundColor: '#f0f0f0',
+        marginRight: 15,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    finderDetails: {
+    founderAvatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 30,
+    },
+    placeholderAvatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 30,
+        backgroundColor: '#3d0c45',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarInitial: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    founderInfo: {
         flex: 1,
     },
-    finderName: {
+    founderName: {
         fontSize: 16,
         fontWeight: 'bold',
         color: '#333',
         marginBottom: 4,
     },
-    finderContact: {
+    founderContact: {
         fontSize: 14,
         color: '#666',
     },
@@ -659,10 +738,41 @@ const styles = StyleSheet.create({
         backgroundColor: '#4CAF50',
     },
     contactButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: '#3d0c45',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.5,
+    },
+    contactButtonLarge: {
+        backgroundColor: '#3d0c45',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 25,
+        marginBottom: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.5,
     },
     actionButtonText: {
         fontSize: 16,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginLeft: 8,
+    },
+    contactButtonText: {
+        fontSize: 14,
         fontWeight: 'bold',
         color: '#fff',
         marginLeft: 8,
