@@ -9,7 +9,8 @@ import {
     Alert,
     Dimensions,
     ActivityIndicator,
-    SafeAreaView
+    SafeAreaView,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -41,6 +42,7 @@ const MatchesScreen = ({ route, navigation }) => {
                 if (userData) {
                     const parsedUserData = JSON.parse(userData);
                     setUserId(parsedUserData._id);
+                    console.log('User ID retrieved:', parsedUserData._id);
                     
                     // If no matches were passed via route params, fetch all matches for the user
                     if (!routeMatches) {
@@ -50,6 +52,7 @@ const MatchesScreen = ({ route, navigation }) => {
                         updateStats(routeMatches);
                     }
                 } else {
+                    console.log('No user data found, using demo data');
                     // Demo data if no user is logged in
                     setDemoData();
                 }
@@ -66,29 +69,52 @@ const MatchesScreen = ({ route, navigation }) => {
     const fetchUserMatches = async (userId) => {
         try {
             setLoading(true);
-            // Fetch matches from the backend
-            const response = await axios.get(`${BACKEND_URL}/user-matches/${userId}`);
+            console.log('Fetching matches for user ID:', userId);
             
-            if (response.data.status === 'success' && response.data.matches) {
-                setMatches(response.data.matches);
-                updateStats(response.data.matches);
+            // Set a timeout to handle slow connections
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout')), 10000)
+            );
+            
+            // Actual fetch request
+            const fetchPromise = axios.get(`${BACKEND_URL}/user-matches/${userId}`);
+            
+            // Race between timeout and fetch
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
+            
+            console.log('Matches API response:', response.data);
+            
+            if (response.data && response.data.matches) {
+                // Process the matches to ensure avatar URLs are valid
+                const processedMatches = response.data.matches.map(match => {
+                    // Ensure we have a valid avatar URL
+                    if (match.foundByUser && !match.foundByUser.avatar) {
+                        match.foundByUser.avatar = 'https://randomuser.me/api/portraits/lego/1.jpg';
+                    }
+                    
+                    // Log the avatar URL for debugging
+                    console.log(`Match ${match.id} avatar URL:`, match.foundByUser?.avatar || 'No avatar');
+                    
+                    return match;
+                });
+                
+                setMatches(processedMatches);
+                updateStats(processedMatches);
             } else {
-                // If no matches found or error in response
                 setMatches([]);
                 updateStats([]);
-                Alert.alert('Info', 'No matches found for your items.');
             }
         } catch (error) {
             console.error('Error fetching matches:', error);
-            Alert.alert('Error', 'Failed to fetch matches. Please try again later.');
-            // Only use demo data in development environment
-            if (__DEV__) {
-                console.log('Using demo data in development mode');
-                setDemoData();
-            } else {
-                setMatches([]);
-                updateStats([]);
-            }
+            Alert.alert(
+                'Error',
+                'Failed to fetch matches. Please try again later.',
+                [{ text: 'OK' }]
+            );
+            
+            // For demo purposes, load some sample data
+            console.log('Loading demo data instead');
+            setDemoData();
         } finally {
             setLoading(false);
         }
@@ -168,20 +194,88 @@ const MatchesScreen = ({ route, navigation }) => {
             return;
         }
         
+        // Validate the foundByUser object
+        if (!item.foundByUser || !item.foundByUser.id) {
+            console.error('Invalid foundByUser data:', item.foundByUser);
+            Alert.alert('Error', 'Cannot contact this user. Missing contact information.');
+            return;
+        }
+        
+        console.log('Navigating to chat with:', item.foundByUser);
+        
+        // Ensure we have a valid avatar URL
+        const avatarUrl = item.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
+        
+        // Ensure we have a valid name
+        const userName = item.foundByUser?.name || 'Unknown User';
+        
+        // Log the data being passed to ChatScreen
+        console.log('Passing to ChatScreen:', {
+            recipientId: item.foundByUser.id,
+            recipientName: userName,
+            avatarUrl: avatarUrl,
+            matchId: item.id
+        });
+        
         // Navigate to chat screen with the contact information
         navigation.navigate('ChatScreen', {
             recipientId: item.foundByUser.id,
-            recipientName: item.foundByUser.name,
-            recipientAvatar: item.foundByUser.avatar,
-            matchId: item.id
+            recipientName: userName,
+            recipientAvatar: avatarUrl,
+            matchId: item.id || 'unknown',
+            itemDescription: item.foundItemDescription || 'Found item',
+            // Include additional context about the match
+            matchContext: {
+                matchConfidence: item.matchConfidence || 0,
+                lostItemDescription: item.lostItemDescription || '',
+                foundItemDescription: item.foundItemDescription || '',
+                foundLocation: item.foundLocation || '',
+                foundDate: item.foundDate || ''
+            }
         });
     };
     
+    // Add this function to handle avatar loading errors
+    const handleAvatarError = (item) => {
+        console.log(`Avatar loading error for user: ${item.foundByUser?.id}`);
+        // Update the item's avatar URL to use a default
+        const updatedMatches = matches.map(match => {
+            if (match.id === item.id) {
+                return {
+                    ...match,
+                    foundByUser: {
+                        ...match.foundByUser,
+                        avatar: 'https://randomuser.me/api/portraits/lego/1.jpg'
+                    }
+                };
+            }
+            return match;
+        });
+        setMatches(updatedMatches);
+    };
+    
     const renderMatchItem = ({ item }) => {
+        // Ensure we have a valid avatar URL or use a default
+        const avatarUrl = item.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
+        
+        // Log the avatar URL for debugging
+        console.log('Founder avatar URL:', avatarUrl);
+        
+        // Ensure foundByUser has all required fields
+        const enhancedItem = {
+            ...item,
+            foundByUser: {
+                ...item.foundByUser,
+                avatar: avatarUrl,
+                name: item.foundByUser?.name || 'Unknown User',
+                id: item.foundByUser?.id || 'unknown'
+            }
+        };
+        
         return (
             <TouchableOpacity 
                 style={styles.matchCard}
-                onPress={() => navigation.navigate('MatchDetailsScreen', { match: item })}
+                onPress={() => navigation.navigate('MatchDetailsScreen', { match: enhancedItem })}
             >
                 <View style={styles.matchHeader}>
                     <View style={styles.matchConfidenceContainer}>
@@ -210,20 +304,28 @@ const MatchesScreen = ({ route, navigation }) => {
                         <Text style={styles.itemDescription}>
                             {lostItemDescription || item.lostItemDescription}
                         </Text>
+                        <Text style={styles.debugInfo}>
+                            Lost Item ID: {item.lostItemId?.toString().substring(0, 8)}...{'\n'}
+                            Found Item ID: {item.foundItemId?.toString().substring(0, 8)}...
+                        </Text>
                     </View>
                 </View>
                 
                 <View style={styles.founderInfo}>
-                    <Image 
-                        source={{ uri: item.foundByUser.avatar }} 
-                        style={styles.founderAvatar} 
-                    />
+                    <View style={styles.avatarContainer}>
+                        <Image 
+                            source={{ uri: avatarUrl }} 
+                            style={styles.founderAvatar}
+                            onError={() => handleAvatarError(item)}
+                        />
+                    </View>
                     <View style={styles.founderDetails}>
-                        <Text style={styles.founderName}>Found by {item.foundByUser.name}</Text>
+                        <Text style={styles.founderName}>Found by {item.foundByUser?.name || 'Unknown User'}</Text>
+                        <Text style={styles.founderMeta}>User ID: {item.foundByUser?.id?.toString().substring(0, 8) || 'Unknown'}...</Text>
                     </View>
                     <TouchableOpacity 
                         style={styles.contactButton}
-                        onPress={() => handleContactOwner(item)}
+                        onPress={() => handleContactOwner(enhancedItem)}
                     >
                         <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
                         <Text style={styles.contactButtonText}>Contact</Text>
@@ -414,11 +516,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
     },
-    founderAvatar: {
+    avatarContainer: {
         width: 40,
         height: 40,
         borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#f0f0f0',
         marginRight: 12,
+    },
+    founderAvatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 20,
     },
     founderDetails: {
         flex: 1,
@@ -460,6 +569,17 @@ const styles = StyleSheet.create({
         color: '#666',
         textAlign: 'center',
         lineHeight: 24,
+    },
+    debugInfo: {
+        fontSize: width * 0.03,
+        color: '#888',
+        marginTop: 5,
+        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    founderMeta: {
+        fontSize: width * 0.03,
+        color: '#666',
+        marginTop: 2,
     },
 });
 
