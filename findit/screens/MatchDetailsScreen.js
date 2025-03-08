@@ -14,9 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.18.18:5000'; // Update with your backend URL
+const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
 const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
 
 const MatchDetailsScreen = ({ route, navigation }) => {
@@ -125,26 +126,40 @@ const MatchDetailsScreen = ({ route, navigation }) => {
             const lostItemResponse = await axios.get(`${BACKEND_URL}/lostitem/${lostId}`);
             if (lostItemResponse.data.status === 'success') {
                 setLostItem(lostItemResponse.data.item);
+            } else {
+                throw new Error('Failed to fetch lost item details');
             }
             
             // Fetch found item details
             const foundItemResponse = await axios.get(`${BACKEND_URL}/founditem/${foundId}`);
             if (foundItemResponse.data.status === 'success') {
                 setFoundItem(foundItemResponse.data.item);
+            } else {
+                throw new Error('Failed to fetch found item details');
             }
             
             // Calculate match score
             if (lostItemResponse.data.item && foundItemResponse.data.item) {
-                calculateMatchScore(
+                const score = calculateMatchScore(
                     lostItemResponse.data.item,
                     foundItemResponse.data.item
                 );
+                setMatchScore(score);
             }
         } catch (error) {
             console.error('Error fetching match details:', error);
-            Alert.alert('Error', 'Failed to fetch match details');
-            // Fall back to demo data
-            setUpDemoData();
+            Alert.alert('Error', 'Failed to fetch match details. Please try again later.');
+            
+            // Only use demo data in development environment
+            if (__DEV__) {
+                console.log('Using demo data in development mode');
+                setUpDemoData();
+            } else {
+                // Navigate back if we can't show the details
+                Alert.alert('Error', 'Could not load match details', [
+                    { text: 'Go Back', onPress: () => navigation.goBack() }
+                ]);
+            }
         } finally {
             setLoading(false);
         }
@@ -193,7 +208,7 @@ const MatchDetailsScreen = ({ route, navigation }) => {
             score += timeScore;
         }
         
-        setMatchScore(Math.round(score));
+        return Math.round(Math.min(score, maxScore));
     };
     
     const handleContactOwner = () => {

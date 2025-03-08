@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -141,7 +142,7 @@ const SignUpScreen = ({ navigation }) => {
     
             console.log('Sending registration request...');
             
-            const response = await fetch('http://192.168.18.18:5000/register', {
+            const response = await fetch(API_CONFIG.REGISTER_URL, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',

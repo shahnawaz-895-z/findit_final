@@ -18,10 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
+import API_CONFIG from '../config';
 
 // Get screen dimensions and handle orientation changes
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const API_URL = 'http://192.168.18.18:5000';
+const API_URL = API_CONFIG.API_URL;
 
 // Calculate responsive sizes
 const scale = SCREEN_WIDTH / 375; // 375 is standard width

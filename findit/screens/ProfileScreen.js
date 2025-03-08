@@ -15,8 +15,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as ImagePicker from 'expo-image-picker';
+import API_CONFIG from '../config';
 
-const SERVER_URL = 'http://192.168.18.18:5000'; // Update with your server URL
+const SERVER_URL = API_CONFIG.API_URL; // Using centralized config
 
 const { width, height } = Dimensions.get('window');
 

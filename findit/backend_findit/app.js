@@ -1372,6 +1372,140 @@ app.get('/user/:userId/founditems', async (req, res) => {
     }
 });
 
+// **Get User Matches**
+app.get('/user-matches/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        if (!userId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
+        }
+        
+        // Find all lost items by this user
+        const userLostItems = await LostItem.find({ user: userId });
+        
+        if (userLostItems.length === 0) {
+            return res.json({
+                status: 'success',
+                matches: [],
+                message: 'No lost items found for this user'
+            });
+        }
+        
+        // Array to store all matches
+        let allMatches = [];
+        
+        // For each lost item, find potential matches
+        for (const lostItem of userLostItems) {
+            // Build query for matching found items
+            const query = {};
+            
+            // Description matching
+            if (lostItem.description) {
+                const keywords = lostItem.description.split(/\s+/).filter(word => word.length > 3);
+                if (keywords.length > 0) {
+                    const keywordPattern = keywords.join('|');
+                    query.description = { $regex: keywordPattern, $options: 'i' };
+                } else {
+                    query.description = { $regex: lostItem.description, $options: 'i' };
+                }
+            }
+            
+            // Category matching
+            if (lostItem.category) {
+                query.category = lostItem.category;
+            }
+            
+            // Find matching found items
+            const matchedItems = await FoundItem.find(query).populate('user', 'name email profileImage');
+            
+            if (matchedItems.length > 0) {
+                // Calculate match score for each item
+                const scoredMatches = matchedItems.map(foundItem => {
+                    let score = 0;
+                    const maxScore = 100;
+                    
+                    // Description similarity (50%)
+                    if (lostItem.description && foundItem.description) {
+                        const descWords = lostItem.description.toLowerCase().split(/\s+/);
+                        const foundDescWords = foundItem.description.toLowerCase().split(/\s+/);
+                        
+                        const matchingWords = descWords.filter(word => 
+                            word.length > 3 && foundDescWords.includes(word)
+                        ).length;
+                        
+                        const matchPercentage = matchingWords / Math.max(descWords.length, 1);
+                        score += matchPercentage * 50;
+                    }
+                    
+                    // Location similarity (30%)
+                    if (lostItem.location && foundItem.location) {
+                        const locParts = lostItem.location.toLowerCase().split(/,|\s+/);
+                        const foundLocParts = foundItem.location.toLowerCase().split(/,|\s+/);
+                        
+                        const matchingParts = locParts.filter(part => 
+                            part.length > 2 && foundLocParts.includes(part)
+                        ).length;
+                        
+                        const matchPercentage = matchingParts / Math.max(locParts.length, 1);
+                        score += matchPercentage * 30;
+                    }
+                    
+                    // Category exact match (20%)
+                    if (lostItem.category && foundItem.category && 
+                        lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) {
+                        score += 20;
+                    }
+                    
+                    // Create match object
+                    return {
+                        id: `${lostItem._id}-${foundItem._id}`,
+                        lostItemId: lostItem._id,
+                        foundItemId: foundItem._id,
+                        lostItemDescription: lostItem.description,
+                        foundItemDescription: foundItem.description,
+                        foundDate: foundItem.date,
+                        foundLocation: foundItem.location,
+                        matchConfidence: Math.min(Math.round(score), maxScore),
+                        status: 'pending', // Default status
+                        foundByUser: {
+                            id: foundItem.user._id,
+                            name: foundItem.user.name,
+                            avatar: foundItem.user.profileImage || 'https://randomuser.me/api/portraits/men/1.jpg'
+                        }
+                    };
+                });
+                
+                // Filter to good matches only (score > 30)
+                const goodMatches = scoredMatches.filter(match => match.matchConfidence > 30);
+                
+                // Add to all matches
+                allMatches = [...allMatches, ...goodMatches];
+            }
+        }
+        
+        // Sort by match confidence (highest first)
+        allMatches.sort((a, b) => b.matchConfidence - a.matchConfidence);
+        
+        // Return matches
+        return res.json({
+            status: 'success',
+            matches: allMatches,
+            totalMatches: allMatches.length
+        });
+        
+    } catch (error) {
+        console.error('Error fetching user matches:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Error fetching user matches'
+        });
+    }
+});
+
 // **Start Server**
 const PORT = process.env.PORT || 5000;
 

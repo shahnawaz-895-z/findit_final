@@ -18,11 +18,12 @@ import { Ionicons } from '@expo/vector-icons';
 import io from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import API_CONFIG from '../config';
 
 // Get screen dimensions and handle orientation changes
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BASE_URL = 'http://192.168.18.18';
-const API_URL = `${BASE_URL}:5000`;
+const BASE_URL = API_CONFIG.BASE_URL;
+const API_URL = API_CONFIG.API_URL;
 const BACKUP_API_URL = `${BASE_URL}:5001`;
 
 // Calculate responsive sizes

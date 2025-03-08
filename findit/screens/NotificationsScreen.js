@@ -14,9 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.18.18:5000'; // Update with your backend URL
+const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
 
 const NotificationsScreen = ({ navigation }) => {
     const [notifications, setNotifications] = useState([]);
