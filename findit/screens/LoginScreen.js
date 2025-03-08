@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Dimensions } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -18,7 +19,7 @@ const LoginScreen = ({ navigation }) => {
 
     try {
         setIsLoading(true);
-        const response = await fetch('http://192.168.18.18:5000/login', {
+        const response = await fetch(API_CONFIG.LOGIN_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

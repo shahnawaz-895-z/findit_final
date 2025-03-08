@@ -49,6 +49,7 @@
     "react-native-fbsdk-next": "^13.1.1",
     "react-native-gesture-handler": "~2.20.2",
     "react-native-gifted-chat": "^2.6.5",
+    "react-native-google-places-autocomplete": "^2.5.7",
     "react-native-keyboard-controller": "^1.16.4",
     "react-native-maps": "1.18.0",
     "react-native-modal-datetime-picker": "^18.0.0",

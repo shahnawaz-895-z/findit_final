@@ -13,6 +13,7 @@ import {
     StatusBar
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import API_CONFIG from '../config';
 
 // Get screen dimensions and handle orientation changes
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -28,7 +29,7 @@ const SearchScreen = ({ navigation }) => {
     const [error, setError] = useState(null);
     const [isServerConnected, setIsServerConnected] = useState(true);
 
-    const SERVER_URL = 'http://192.168.18.18:5000'; // Make sure this matches your server
+    const SERVER_URL = API_CONFIG.API_URL; // Using centralized config
 
     const testServerConnection = async () => {
         try {

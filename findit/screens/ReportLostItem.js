@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView, ActivityIndicator, Dimensions, Modal, SafeAreaView, StatusBar } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
 const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
@@ -31,9 +32,10 @@ const ReportLostItem = () => {
   const [mapVisible, setMapVisible] = useState(false);
   const [geolocation, setGeolocation] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
+  const [fullScreenMap, setFullScreenMap] = useState(false);
 
   const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
-  const BACKEND_URL = 'http://192.168.18.18:5000'; // Updated backend URL for Android emulator
+  const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
   const HUGGING_FACE_API_KEY = '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'; // Replace with your API key
 
   useEffect(() => {
@@ -126,9 +128,53 @@ const ReportLostItem = () => {
 
     Location.reverseGeocodeAsync({ latitude, longitude }).then((addresses) => {
       if (addresses && addresses.length > 0) {
-        setLocation(`${addresses[0]?.city || ''}, ${addresses[0]?.region || ''}, ${addresses[0]?.country || ''}`);
+        const formattedAddress = `${addresses[0]?.name ? addresses[0].name + ', ' : ''}${addresses[0]?.street ? addresses[0].street + ', ' : ''}${addresses[0]?.city ? addresses[0].city + ', ' : ''}${addresses[0]?.region ? addresses[0].region + ', ' : ''}${addresses[0]?.country || ''}`;
+        setLocation(formattedAddress.replace(/,\s*$/, ''));
       }
     });
+  };
+
+  const openFullScreenMap = () => {
+    setFullScreenMap(true);
+    setMapVisible(true);
+  };
+
+  const confirmLocation = () => {
+    setFullScreenMap(false);
+  };
+
+  const detectCurrentLocation = async () => {
+    try {
+      setIsLoading(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location permission is required for better matching.');
+        setIsLoading(false);
+        return;
+      }
+
+      const userLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+      
+      setGeolocation(userLocation.coords);
+      setSelectedLocation(userLocation.coords);
+      
+      const address = await Location.reverseGeocodeAsync(userLocation.coords);
+      if (address && address.length > 0) {
+        const formattedAddress = `${address[0]?.name ? address[0].name + ', ' : ''}${address[0]?.street ? address[0].street + ', ' : ''}${address[0]?.city ? address[0].city + ', ' : ''}${address[0]?.region ? address[0].region + ', ' : ''}${address[0]?.country || ''}`;
+        setLocation(formattedAddress.replace(/,\s*$/, ''));
+      }
+      
+      // Show the full screen map after detecting location
+      setFullScreenMap(true);
+      setMapVisible(true);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error getting current location:', error);
+      Alert.alert('Error', 'Failed to detect current location. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -412,33 +458,88 @@ const ReportLostItem = () => {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Location:</Text>
-          <TouchableOpacity 
-            style={styles.inputContainer} 
-            onPress={() => setMapVisible(!mapVisible)}
-          >
-            <Ionicons name="location-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
-            <Text style={styles.inputText}>
-              {location || 'Tap to select location on map'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.locationContainer}>
+            <TouchableOpacity 
+              style={[styles.inputContainer, { flex: 1 }]} 
+              onPress={openFullScreenMap}
+            >
+              <Ionicons name="location-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+              <Text style={styles.inputText}>
+                {location || 'Tap to select location on map'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.detectLocationButton}
+              onPress={detectCurrentLocation}
+              disabled={isLoading}
+            >
+              <Ionicons name="locate" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </View>
         
-        {mapVisible && (
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: geolocation?.latitude || 37.78825,
-              longitude: geolocation?.longitude || -122.4324,
-              latitudeDelta: 0.0922,
-              longitudeDelta: 0.0421,
-            }}
-            onPress={handleMapPress}
-          >
-            {selectedLocation && (
-              <Marker coordinate={selectedLocation} title="Selected Location" />
-            )}
-          </MapView>
+        {isLoading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#3d0c45" />
+            <Text style={styles.loadingText}>Detecting location...</Text>
+          </View>
         )}
+        
+        {/* Full Screen Map Modal */}
+        <Modal
+          visible={fullScreenMap}
+          animationType="slide"
+          onRequestClose={() => setFullScreenMap(false)}
+        >
+          <SafeAreaView style={styles.fullMapContainer}>
+            <View style={styles.mapHeader}>
+              <TouchableOpacity 
+                style={styles.mapBackButton}
+                onPress={() => setFullScreenMap(false)}
+              >
+                <Ionicons name="arrow-back" size={24} color="#3d0c45" />
+                <Text style={styles.mapHeaderText}>Back</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.mapLocateButton}
+                onPress={detectCurrentLocation}
+              >
+                <Ionicons name="locate" size={24} color="#3d0c45" />
+              </TouchableOpacity>
+            </View>
+            
+            <MapView
+              style={styles.fullMap}
+              region={{
+                latitude: selectedLocation?.latitude || geolocation?.latitude || 37.78825,
+                longitude: selectedLocation?.longitude || geolocation?.longitude || -122.4324,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              onPress={handleMapPress}
+              showsUserLocation={true}
+              showsMyLocationButton={true}
+              showsCompass={true}
+            >
+              {selectedLocation && (
+                <Marker coordinate={selectedLocation} title="Selected Location" />
+              )}
+            </MapView>
+            
+            <View style={styles.mapFooter}>
+              <Text style={styles.selectedLocationText} numberOfLines={2}>
+                {location || 'No location selected'}
+              </Text>
+              <TouchableOpacity 
+                style={styles.confirmLocationButton}
+                onPress={confirmLocation}
+              >
+                <Text style={styles.confirmLocationText}>Use This Location</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Upload Photo:</Text>
@@ -653,6 +754,89 @@ const styles = StyleSheet.create({
     marginBottom: height * 0.025,
     borderRadius: width * 0.03,
     overflow: 'hidden',
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detectLocationButton: {
+    backgroundColor: '#3d0c45',
+    borderRadius: 8,
+    padding: 12,
+    marginLeft: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#3d0c45',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  fullMapContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    zIndex: 10,
+  },
+  mapBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 5,
+  },
+  mapHeaderText: {
+    fontSize: 16,
+    marginLeft: 5,
+    color: '#3d0c45',
+    fontWeight: 'bold',
+  },
+  mapLocateButton: {
+    padding: 10,
+  },
+  fullMap: {
+    flex: 1,
+    width: '100%',
+  },
+  mapFooter: {
+    backgroundColor: '#fff',
+    padding: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  selectedLocationText: {
+    fontSize: 16,
+    marginBottom: 10,
+    color: '#333',
+  },
+  confirmLocationButton: {
+    backgroundColor: '#3d0c45',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmLocationText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

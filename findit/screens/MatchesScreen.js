@@ -14,9 +14,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 const { width, height } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.18.18:5000'; // Update with your backend URL
+const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
 
 const MatchesScreen = ({ route, navigation }) => {
     // Handle case when navigating directly from homepage
@@ -65,13 +66,29 @@ const MatchesScreen = ({ route, navigation }) => {
     const fetchUserMatches = async (userId) => {
         try {
             setLoading(true);
-            // In a real app, you would fetch matches from your backend
-            // For now, we'll use demo data
-            setDemoData();
+            // Fetch matches from the backend
+            const response = await axios.get(`${BACKEND_URL}/user-matches/${userId}`);
+            
+            if (response.data.status === 'success' && response.data.matches) {
+                setMatches(response.data.matches);
+                updateStats(response.data.matches);
+            } else {
+                // If no matches found or error in response
+                setMatches([]);
+                updateStats([]);
+                Alert.alert('Info', 'No matches found for your items.');
+            }
         } catch (error) {
             console.error('Error fetching matches:', error);
             Alert.alert('Error', 'Failed to fetch matches. Please try again later.');
-            setDemoData();
+            // Only use demo data in development environment
+            if (__DEV__) {
+                console.log('Using demo data in development mode');
+                setDemoData();
+            } else {
+                setMatches([]);
+                updateStats([]);
+            }
         } finally {
             setLoading(false);
         }
