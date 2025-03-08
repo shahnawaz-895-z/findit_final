@@ -11,6 +11,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_CONFIG from '../config';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 const { width, height } = Dimensions.get('window');
 const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
@@ -61,30 +62,145 @@ const ReportFoundItem = () => {
     getLocationPermission();
   }, []);
 
-  const pickImage = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  useEffect(() => {
+    const getPermissions = async () => {
+      // Request location permissions
+      const locationPermission = await Location.requestForegroundPermissionsAsync();
+      if (locationPermission.status !== 'granted') {
+        console.log('Location permission not granted');
+      }
 
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission to access camera roll is required!');
+      // Request camera permissions
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      if (cameraPermission.status !== 'granted') {
+        console.log('Camera permission not granted');
+      }
+
+      // Request media library permissions
+      const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (mediaLibraryPermission.status !== 'granted') {
+        console.log('Media library permission not granted');
+      }
+    };
+
+    getPermissions();
+  }, []);
+
+  const launchCamera = async () => {
+    // Request camera permissions
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Permission denied', 'Camera permission is required to take photos.');
       return;
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.5,
-      maxWidth: 1000,
-      maxHeight: 1000,
-    });
+    try {
+      // Launch camera without cropping
+      let result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // No editing/cropping
+        quality: 0.8,
+        exif: false, // Don't need EXIF data
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const selectedImageUri = result.assets[0].uri;
-      setPhoto(selectedImageUri);
-      handleImageUpload(result.assets[0]);
-    } else {
-      Alert.alert('Image selection was cancelled or failed');
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedImageUri = result.assets[0].uri;
+        setPhoto(selectedImageUri);
+        handleImageUpload(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
     }
+  };
+
+  const launchImageLibrary = async () => {
+    // Request media library permissions
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Permission denied', 'Media library permission is required to select photos.');
+      return;
+    }
+
+    try {
+      // Launch image library without cropping
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false, // No editing/cropping
+        quality: 0.8,
+        exif: false, // Don't need EXIF data
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedImageUri = result.assets[0].uri;
+        setPhoto(selectedImageUri);
+        handleImageUpload(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Error selecting image:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
+    }
+  };
+
+  // Add this function to detect category from description
+  const detectCategoryFromDescription = (description) => {
+    const lowerDesc = description.toLowerCase();
+    
+    // Define keywords for each category
+    const categoryKeywords = {
+      'Electronics': ['phone', 'laptop', 'computer', 'tablet', 'ipad', 'iphone', 'android', 'samsung', 'charger', 'headphone', 'earbud', 'camera', 'watch', 'smart'],
+      'Bags': ['bag', 'backpack', 'purse', 'handbag', 'luggage', 'suitcase', 'wallet', 'pouch', 'sack'],
+      'Clothing': ['shirt', 'pant', 'jacket', 'coat', 'sweater', 'hoodie', 'dress', 'skirt', 'hat', 'cap', 'scarf', 'glove', 'sock', 'shoe', 'boot', 'sneaker', 'clothing', 'wear'],
+      'Accessories': ['ring', 'necklace', 'bracelet', 'earring', 'jewelry', 'watch', 'glasses', 'sunglasses', 'umbrella', 'key', 'keychain'],
+      'Documents': ['book', 'notebook', 'document', 'paper', 'card', 'id', 'passport', 'license', 'certificate', 'folder', 'file'],
+    };
+    
+    // Check each category for matching keywords
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      for (const keyword of keywords) {
+        if (lowerDesc.includes(keyword)) {
+          return category;
+        }
+      }
+    }
+    
+    // Default to 'Others' if no match found
+    return 'Others';
+  };
+
+  // Add this function to generate item name from description
+  const generateItemNameFromDescription = (description) => {
+    // Split the description into words
+    const words = description.split(/\s+/);
+    
+    // If description is short enough, use it directly
+    if (words.length <= 5) {
+      // Capitalize first letter
+      return description.charAt(0).toUpperCase() + description.slice(1);
+    }
+    
+    // Extract key nouns from the description
+    const commonNouns = ['phone', 'wallet', 'bag', 'keys', 'watch', 'laptop', 'book', 'card', 'glasses', 'umbrella', 'camera', 'headphones', 'earbuds', 'ring', 'necklace', 'bracelet'];
+    
+    // Look for common nouns in the description
+    for (const noun of commonNouns) {
+      if (description.toLowerCase().includes(noun)) {
+        // Find the adjectives before the noun (up to 2 words)
+        const nounIndex = words.findIndex(word => word.toLowerCase().includes(noun));
+        if (nounIndex > 0) {
+          const startIndex = Math.max(0, nounIndex - 2);
+          const itemNameWords = words.slice(startIndex, nounIndex + 1);
+          return itemNameWords.join(' ').charAt(0).toUpperCase() + itemNameWords.join(' ').slice(1);
+        }
+        // If no adjectives, just use the noun with a prefix
+        return `Found ${noun}`.charAt(0).toUpperCase() + `Found ${noun}`.slice(1);
+      }
+    }
+    
+    // If no common nouns found, use the first 3-4 words
+    return words.slice(0, 4).join(' ').charAt(0).toUpperCase() + words.slice(0, 4).join(' ').slice(1);
   };
 
   const handleImageUpload = async (asset) => {
@@ -97,7 +213,30 @@ const ReportFoundItem = () => {
     const huggingFaceUrl = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
 
     try {
-      const base64ImageData = await FileSystem.readAsStringAsync(asset.uri, {
+      // Check image size
+      const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+      
+      // If image is too large (> 5MB), compress it
+      let imageUri = asset.uri;
+      if (fileInfo.size > 5 * 1024 * 1024) {
+        try {
+          // Create a temporary compressed version
+          const compressedUri = `${FileSystem.cacheDirectory}compressed_${Date.now()}.jpg`;
+          const result = await ImageManipulator.manipulateAsync(
+            asset.uri,
+            [{ resize: { width: 1200 } }], // Resize to reasonable width while maintaining aspect ratio
+            { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          imageUri = result.uri;
+          console.log('Image compressed successfully');
+        } catch (compressionError) {
+          console.error('Error compressing image:', compressionError);
+          // Continue with original image if compression fails
+        }
+      }
+      
+      // Process image for description
+      const base64ImageData = await FileSystem.readAsStringAsync(imageUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
@@ -108,10 +247,48 @@ const ReportFoundItem = () => {
         },
       });
 
+      let generatedDescription = 'No description available';
       if (result.data && result.data[0] && result.data[0].generated_text) {
-        setDescription(result.data[0].generated_text);
+        generatedDescription = result.data[0].generated_text;
+        setDescription(generatedDescription);
+        
+        // Auto-detect category if not already set
+        if (!category) {
+          const detectedCategory = detectCategoryFromDescription(generatedDescription);
+          setCategory(detectedCategory);
+        }
+        
+        // Auto-generate item name if not already set
+        if (!itemName) {
+          const generatedName = generateItemNameFromDescription(generatedDescription);
+          setItemName(generatedName);
+        }
       } else {
-        setDescription('No description available');
+        setDescription(generatedDescription);
+      }
+
+      // Check if location is already set, if not, detect current location
+      if (!location || location.trim() === '') {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const userLocation = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.High
+            });
+            
+            setGeolocation(userLocation.coords);
+            setSelectedLocation(userLocation.coords);
+            
+            const address = await Location.reverseGeocodeAsync(userLocation.coords);
+            if (address && address.length > 0) {
+              const formattedAddress = `${address[0]?.name ? address[0].name + ', ' : ''}${address[0]?.street ? address[0].street + ', ' : ''}${address[0]?.city ? address[0].city + ', ' : ''}${address[0]?.region ? address[0].region + ', ' : ''}${address[0]?.country || ''}`;
+              setLocation(formattedAddress.replace(/,\s*$/, ''));
+            }
+          }
+        } catch (locationError) {
+          console.error('Error getting location during image upload:', locationError);
+          // Don't show an alert here to avoid interrupting the image upload flow
+        }
       }
     } catch (error) {
       console.error('Error processing image:', error);
@@ -204,43 +381,66 @@ const ReportFoundItem = () => {
       Alert.alert('Error', 'Please select a date.');
       return;
     }
-    if (!description) {
-      Alert.alert('Error', 'Please provide a description.');
-      return;
-    }
     if (!category) {
       Alert.alert('Error', 'Please select a category.');
       return;
     }
-    if (!selectedLocation) {
-      Alert.alert('Error', 'Please select a location on the map.');
+    if (!description) {
+      Alert.alert('Error', 'Please provide a description.');
       return;
     }
     if (!itemName) {
-      Alert.alert('Error', 'Please provide the item name.');
+      Alert.alert('Error', 'Please provide an item name.');
       return;
     }
 
     setIsLoading(true);
 
     try {
+      // Create the request body
       const formData = new FormData();
       formData.append('contact', contact);
+      formData.append('category', category);
       formData.append('location', location);
+      formData.append('description', description);
       formData.append('time', time.toISOString());
       formData.append('date', date.toISOString());
-      formData.append('description', description);
-      formData.append('category', category);
-      formData.append('latitude', selectedLocation.latitude);
-      formData.append('longitude', selectedLocation.longitude);
       formData.append('itemName', itemName);
-
+      
+      // Add coordinates if available
+      if (selectedLocation) {
+        formData.append('latitude', selectedLocation.latitude);
+        formData.append('longitude', selectedLocation.longitude);
+      }
+      
+      // Process photo if available
       if (photo) {
-        let photoUri = photo;
-        if (Platform.OS === 'android' && !photo.startsWith('file://')) {
-          photoUri = `file://${photo}`;
+        // Check image size and compress if needed
+        const fileInfo = await FileSystem.getInfoAsync(photo);
+        let photoToUpload = photo;
+        
+        // If image is too large (> 2MB), compress it
+        if (fileInfo.size > 2 * 1024 * 1024) {
+          try {
+            const result = await ImageManipulator.manipulateAsync(
+              photo,
+              [{ resize: { width: 1200 } }], // Resize to reasonable width while maintaining aspect ratio
+              { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            photoToUpload = result.uri;
+            console.log('Photo compressed for upload');
+          } catch (compressionError) {
+            console.error('Error compressing photo for upload:', compressionError);
+            // Continue with original photo if compression fails
+          }
         }
-
+        
+        // Fix URI for Android
+        let photoUri = photoToUpload;
+        if (Platform.OS === 'android' && !photoToUpload.startsWith('file://')) {
+          photoUri = `file://${photoToUpload}`;
+        }
+        
         formData.append('photo', {
           uri: photoUri,
           type: 'image/jpeg',
@@ -251,24 +451,45 @@ const ReportFoundItem = () => {
       // Add to recent activity
       await addToRecentActivity();
 
-      // For demo purposes, simulate a successful response
-      setTimeout(() => {
-        setIsLoading(false);
+      // Send the data to the backend
+      const response = await axios.post(`${BACKEND_URL}/founditem`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (response.data.status === 'success') {
+        // Show success message
         Alert.alert(
-          'Success',
-          'Your found item has been reported successfully!',
+          'Success!',
+          'Your found item has been reported successfully. Thank you for helping someone find their lost item!',
           [
             {
               text: 'OK',
-              onPress: () => navigation.navigate('HomePage')
-            }
+              onPress: () => {
+                // Reset form
+                setContact('');
+                setLocation('');
+                setPhoto(null);
+                setDescription('');
+                setTime(new Date());
+                setDate(new Date());
+                setCategory('');
+                setItemName('');
+                // Navigate back to home
+                navigation.navigate('HomePage');
+              },
+            },
           ]
         );
-      }, 1500);
+      } else {
+        Alert.alert('Error', 'Failed to report found item. Please try again.');
+      }
     } catch (error) {
-      console.error('Error submitting found item:', error);
+      console.error('Error submitting form:', error);
+      Alert.alert('Error', 'Failed to report found item. Please try again.');
+    } finally {
       setIsLoading(false);
-      Alert.alert('Error', 'Failed to submit your report. Please try again.');
     }
   };
 
@@ -483,14 +704,30 @@ const ReportFoundItem = () => {
           </SafeAreaView>
         </Modal>
 
-        <TouchableOpacity onPress={pickImage} style={styles.pickImageButton}>
-          <Ionicons name="camera-outline" size={24} color="#FFFFFF" />
-          <Text style={styles.pickImageText}>Add Photo</Text>
-        </TouchableOpacity>
+        <View style={styles.photoButtonsContainer}>
+          <TouchableOpacity onPress={() => launchCamera()} style={styles.cameraButton}>
+            <Ionicons name="camera-outline" size={24} color="#FFFFFF" />
+            <Text style={styles.buttonText}>Take Photo</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity onPress={() => launchImageLibrary()} style={styles.galleryButton}>
+            <Ionicons name="images-outline" size={24} color="#FFFFFF" />
+            <Text style={styles.buttonText}>Choose from Gallery</Text>
+          </TouchableOpacity>
+        </View>
 
         {photo && (
           <View style={styles.imagePreviewContainer}>
             <Image source={{ uri: photo }} style={styles.imagePreview} />
+            <TouchableOpacity 
+              style={styles.removePhotoButton}
+              onPress={() => {
+                setPhoto(null);
+                setDescription('');
+              }}
+            >
+              <Ionicons name="close-circle" size={24} color="#FF3B30" />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -629,19 +866,20 @@ const styles = StyleSheet.create({
     marginLeft: width * 0.02,
   },
   imagePreviewContainer: {
+    position: 'relative',
+    width: '100%',
+    height: width * 0.7,
+    marginBottom: height * 0.02,
     borderRadius: width * 0.03,
     overflow: 'hidden',
-    marginBottom: height * 0.02,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   imagePreview: {
     width: '100%',
-    height: height * 0.3,
-    borderRadius: width * 0.03,
+    height: '100%',
+    resizeMode: 'contain',
   },
   descriptionContainer: {
     backgroundColor: '#FFFFFF',
@@ -790,6 +1028,55 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  photoButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: height * 0.02,
+    gap: width * 0.03,
+  },
+  cameraButton: {
+    flex: 1,
+    backgroundColor: '#3d0c45',
+    padding: height * 0.015,
+    borderRadius: width * 0.03,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  galleryButton: {
+    flex: 1,
+    backgroundColor: '#5a1c64',
+    padding: height * 0.015,
+    borderRadius: width * 0.03,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: width * 0.035,
+    fontWeight: 'bold',
+    marginLeft: width * 0.02,
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 20,
+    padding: 5,
+    zIndex: 10,
   },
 });
 

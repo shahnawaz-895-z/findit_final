@@ -14,6 +14,12 @@ import LostItem from './lostitemschema.js';
 import Message from './messageschema.js';
 import Notification from './notificationschema.js';
 
+// Import the matching system
+import { 
+    findMatches, 
+    precomputeItemEmbedding 
+} from './itemMatching.js';
+
 // Load environment variables
 dotenv.config();
 
@@ -593,7 +599,7 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
 // **Find Matching Items Based on Description**
 app.post('/matchingfounditems', async (req, res) => {
     try {
-        const { lostItemId, lostItemDescription, lostItemLocation, lostItemCategory } = req.body;
+        const { lostItemId, lostItemDescription, lostItemLocation, lostItemCategory, lostItemDate } = req.body;
         
         if (!lostItemDescription && !lostItemId) {
             return res.status(400).json({ 
@@ -612,123 +618,52 @@ app.post('/matchingfounditems', async (req, res) => {
                     message: 'Lost item not found' 
                 });
             }
+        } else {
+            // Create a temporary lost item object from the provided data
+            lostItem = {
+                description: lostItemDescription,
+                location: lostItemLocation,
+                category: lostItemCategory,
+                date: lostItemDate || new Date()
+            };
         }
 
-        // Build the query based on available information
+        // Build a basic query to pre-filter items (for efficiency)
         const query = {};
         
-        // Description matching (using text search for better results)
-        if (lostItem?.description || lostItemDescription) {
-            const descriptionToMatch = lostItem?.description || lostItemDescription;
-            // Split the description into keywords
-            const keywords = descriptionToMatch.split(/\s+/).filter(word => word.length > 3);
-            
-            if (keywords.length > 0) {
-                // Create a regex pattern that matches any of the keywords
-                const keywordPattern = keywords.map(word => `(?=.*${word})`).join('');
-                query.description = { $regex: new RegExp(keywordPattern, 'i') };
-            } else {
-                // Fallback to simple matching if no good keywords
-                query.description = { $regex: descriptionToMatch, $options: 'i' };
-            }
+        // Category matching (if available) - exact match for pre-filtering
+        if (lostItem.category) {
+            query.category = lostItem.category;
         }
         
-        // Location matching (if provided)
-        if (lostItem?.location || lostItemLocation) {
-            const locationToMatch = lostItem?.location || lostItemLocation;
-            // Extract city or area name from location string
-            const locationParts = locationToMatch.split(/,|\s+/);
-            if (locationParts.length > 0) {
-                // Match if any part of the location matches
-                const locationRegex = locationParts
-                    .filter(part => part.length > 2)
-                    .map(part => `(?=.*${part})`)
-                    .join('');
-                
-                if (locationRegex) {
-                    query.location = { $regex: new RegExp(locationRegex, 'i') };
-                }
-            }
-        }
-        
-        // Category matching (if available)
-        if (lostItem?.category || lostItemCategory) {
-            const categoryToMatch = lostItem?.category || lostItemCategory;
-            // For category, we want an exact match
-            query.category = categoryToMatch;
-        }
-        
-        console.log('Matching query:', JSON.stringify(query));
-        
-        // Find matching found items
-        const matchedItems = await FoundItem.find(query).sort({ createdAt: -1 }).limit(20);
+        // Find potential matches with basic filtering
+        const potentialMatches = await FoundItem.find(query).sort({ createdAt: -1 }).limit(50);
 
-        if (matchedItems.length === 0) {
+        if (potentialMatches.length === 0) {
             return res.status(200).json({ 
                 status: 'not_found', 
                 message: 'No items match your description yet. We\'ll notify you when a match is found.' 
             });
         }
 
-        // Calculate match score for each item
-        const scoredMatches = matchedItems.map(item => {
-            let score = 0;
-            const maxScore = 100;
-            
-            // Description similarity score (up to 50 points)
-            if (lostItem?.description || lostItemDescription) {
-                const descToMatch = lostItem?.description || lostItemDescription;
-                const descWords = descToMatch.toLowerCase().split(/\s+/);
-                const itemDescWords = item.description.toLowerCase().split(/\s+/);
-                
-                // Count matching words
-                const matchingWords = descWords.filter(word => 
-                    word.length > 3 && itemDescWords.includes(word)
-                ).length;
-                
-                // Calculate percentage of matching words
-                const matchPercentage = matchingWords / Math.max(descWords.length, 1);
-                score += matchPercentage * 50;
-            }
-            
-            // Location similarity score (up to 30 points)
-            if (lostItem?.location || lostItemLocation) {
-                const locToMatch = lostItem?.location || lostItemLocation;
-                const locParts = locToMatch.toLowerCase().split(/,|\s+/);
-                const itemLocParts = item.location.toLowerCase().split(/,|\s+/);
-                
-                // Count matching location parts
-                const matchingParts = locParts.filter(part => 
-                    part.length > 2 && itemLocParts.includes(part)
-                ).length;
-                
-                // Calculate percentage of matching location parts
-                const matchPercentage = matchingParts / Math.max(locParts.length, 1);
-                score += matchPercentage * 30;
-            }
-            
-            // Category exact match (20 points)
-            if ((lostItem?.category || lostItemCategory) && 
-                (lostItem?.category === item.category || lostItemCategory === item.category)) {
-                score += 20;
-            }
-            
-            return {
-                ...item.toObject(),
-                matchScore: Math.min(Math.round(score), maxScore)
-            };
-        });
+        // Use the advanced matching system to score and rank matches
+        const goodMatches = await findMatches(lostItem, potentialMatches);
         
-        // Sort by match score (highest first)
-        scoredMatches.sort((a, b) => b.matchScore - a.matchScore);
-        
-        // Return only matches with a score above a threshold
-        const goodMatches = scoredMatches.filter(match => match.matchScore > 30);
-        
+        if (goodMatches.length === 0) {
+            return res.status(200).json({ 
+                status: 'no_good_matches', 
+                message: 'No strong matches found for your item yet. We\'ll notify you when a better match is found.',
+                potentialMatches: potentialMatches.slice(0, 5).map(item => ({
+                    ...item.toObject(),
+                    matchScore: 20 // Low confidence score
+                }))
+            });
+        }
+
         res.status(200).json({ 
             status: 'success', 
             matchedItems: goodMatches,
-            totalMatches: matchedItems.length,
+            totalMatches: potentialMatches.length,
             goodMatches: goodMatches.length
         });
     } catch (error) {
@@ -971,179 +906,94 @@ function formatMessageTime(date) {
 // **Check for new matches and send notifications**
 app.post('/check-for-matches', async (req, res) => {
     try {
-        const { userId, lostItemId } = req.body;
+        const { lostItemId } = req.body;
         
-        if (!userId || !lostItemId) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Missing required fields: userId and lostItemId'
+        if (!lostItemId) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Missing lost item ID' 
             });
         }
         
         // Get the lost item details
         const lostItem = await LostItem.findById(lostItemId);
         if (!lostItem) {
-            return res.status(404).json({
-                status: 'error',
-                message: 'Lost item not found'
+            return res.status(404).json({ 
+                status: 'error', 
+                message: 'Lost item not found' 
             });
         }
         
-        // Build the query for matching
-        const query = {};
+        // Find found items created after the lost item was reported
+        const query = {
+            createdAt: { $gt: lostItem.createdAt }
+        };
         
-        // Description matching
-        if (lostItem.description) {
-            const keywords = lostItem.description.split(/\s+/).filter(word => word.length > 3);
-            if (keywords.length > 0) {
-                const keywordPattern = keywords.map(word => `(?=.*${word})`).join('');
-                query.description = { $regex: new RegExp(keywordPattern, 'i') };
-            } else {
-                query.description = { $regex: lostItem.description, $options: 'i' };
-            }
-        }
-        
-        // Location matching
-        if (lostItem.location) {
-            const locationParts = lostItem.location.split(/,|\s+/);
-            if (locationParts.length > 0) {
-                const locationRegex = locationParts
-                    .filter(part => part.length > 2)
-                    .map(part => `(?=.*${part})`)
-                    .join('');
-                
-                if (locationRegex) {
-                    query.location = { $regex: new RegExp(locationRegex, 'i') };
-                }
-            }
-        }
-        
-        // Category matching
+        // Add category for basic filtering
         if (lostItem.category) {
             query.category = lostItem.category;
         }
         
-        // Find matching found items created after the lost item was reported
-        query.createdAt = { $gt: lostItem.createdAt };
+        const newFoundItems = await FoundItem.find(query).sort({ createdAt: -1 });
         
-        console.log('Checking for new matches with query:', JSON.stringify(query));
-        
-        const newMatches = await FoundItem.find(query).sort({ createdAt: -1 });
-        
-        if (newMatches.length === 0) {
-            return res.status(200).json({
-                status: 'success',
+        if (newFoundItems.length === 0) {
+            return res.status(200).json({ 
+                status: 'success', 
                 newMatches: 0,
                 message: 'No new matches found'
             });
         }
         
-        // Calculate match scores
-        const scoredMatches = newMatches.map(item => {
-            let score = 0;
-            const maxScore = 100;
-            
-            // Description similarity score (up to 50 points)
-            if (lostItem.description) {
-                const descWords = lostItem.description.toLowerCase().split(/\s+/);
-                const itemDescWords = item.description.toLowerCase().split(/\s+/);
-                
-                const matchingWords = descWords.filter(word => 
-                    word.length > 3 && itemDescWords.includes(word)
-                ).length;
-                
-                const matchPercentage = matchingWords / Math.max(descWords.length, 1);
-                score += matchPercentage * 50;
-            }
-            
-            // Location similarity score (up to 30 points)
-            if (lostItem.location) {
-                const locParts = lostItem.location.toLowerCase().split(/,|\s+/);
-                const itemLocParts = item.location.toLowerCase().split(/,|\s+/);
-                
-                const matchingParts = locParts.filter(part => 
-                    part.length > 2 && itemLocParts.includes(part)
-                ).length;
-                
-                const matchPercentage = matchingParts / Math.max(locParts.length, 1);
-                score += matchPercentage * 30;
-            }
-            
-            // Category exact match (20 points)
-            if (lostItem.category && lostItem.category === item.category) {
-                score += 20;
-            }
-            
-            return {
-                ...item.toObject(),
-                matchScore: Math.min(Math.round(score), maxScore)
-            };
-        });
-        
-        // Filter to good matches only
-        const goodMatches = scoredMatches.filter(match => match.matchScore > 40);
+        // Use the advanced matching system
+        const goodMatches = await findMatches(lostItem, newFoundItems);
         
         if (goodMatches.length === 0) {
-            return res.status(200).json({
-                status: 'success',
+            return res.status(200).json({ 
+                status: 'success', 
                 newMatches: 0,
-                message: 'No significant matches found'
+                message: 'No good matches found among new items'
             });
         }
         
-        // Create notifications for each good match
+        // Create notifications for good matches
         const notifications = [];
-        
         for (const match of goodMatches) {
             // Check if a notification already exists for this match
             const existingNotification = await Notification.findOne({
-                userId,
                 lostItemId: lostItem._id,
-                foundItemId: match._id,
-                type: 'match_found'
+                foundItemId: match._id
             });
             
             if (!existingNotification) {
                 // Create a new notification
                 const notification = new Notification({
-                    userId,
+                    userId: lostItem.userId,
+                    type: 'match',
+                    title: 'New Match Found',
+                    message: `We found a ${match.matchScore}% match for your lost ${lostItem.itemName || 'item'}`,
                     lostItemId: lostItem._id,
                     foundItemId: match._id,
-                    type: 'match_found',
-                    title: 'Potential Match Found!',
-                    message: `We found a ${match.matchScore}% match for your lost ${lostItem.category || 'item'}.`,
+                    matchScore: match.matchScore,
                     read: false,
                     createdAt: new Date()
                 });
                 
                 await notification.save();
                 notifications.push(notification);
-                
-                // Emit a socket event for real-time notification
-                io.to(userId).emit('newNotification', {
-                    type: 'match_found',
-                    title: 'Potential Match Found!',
-                    message: `We found a ${match.matchScore}% match for your lost ${lostItem.category || 'item'}.`,
-                    matchScore: match.matchScore,
-                    lostItemId: lostItem._id.toString(),
-                    foundItemId: match._id.toString(),
-                    createdAt: new Date()
-                });
             }
         }
         
-        res.status(200).json({
-            status: 'success',
-            newMatches: notifications.length,
-            totalMatches: goodMatches.length,
-            notifications
+        res.status(200).json({ 
+            status: 'success', 
+            newMatches: goodMatches.length,
+            notifications: notifications.length,
+            matches: goodMatches
         });
-        
     } catch (error) {
-        console.error('Error checking for matches:', error);
-        res.status(500).json({
-            status: 'error',
-            message: 'Error checking for matches',
+        console.error('Error checking for new matches:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Error checking for new matches',
             details: error.message
         });
     }
