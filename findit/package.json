@@ -23,6 +23,7 @@
     "@react-navigation/stack": "^6.4.1",
     "@rneui/base": "^4.0.0-rc.7",
     "@rneui/themed": "^4.0.0-rc.8",
+    "@xenova/transformers": "^2.17.2",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "buffer": "^6.0.3",
@@ -60,7 +61,9 @@
     "react-native-twitter-signin": "^1.1.1",
     "react-native-vector-icons": "^10.2.0",
     "react-native-voice": "^0.3.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "stopwords": "^0.0.9",
+    "expo-image-manipulator": "~13.0.6"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0"
