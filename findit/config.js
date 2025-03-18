@@ -21,6 +21,14 @@ const API_CONFIG = {
   },
   get REGISTER_URL() {
     return `${this.API_URL}/register`;
+  },
+  
+  // Lost and Found endpoints
+  get LOST_ITEMS_URL() {
+    return `${this.API_URL}/lostitem`;
+  },
+  get FOUND_ITEMS_URL() {
+    return `${this.API_URL}/founditem`;
   }
 };
 

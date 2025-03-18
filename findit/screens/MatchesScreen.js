@@ -73,7 +73,7 @@ const MatchesScreen = ({ route, navigation }) => {
             
             // Set a timeout to handle slow connections
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Request timeout')), 10000)
+                setTimeout(() => reject(new Error('Request timeout')), 15000)
             );
             
             // Actual fetch request
@@ -82,33 +82,149 @@ const MatchesScreen = ({ route, navigation }) => {
             // Race between timeout and fetch
             const response = await Promise.race([fetchPromise, timeoutPromise]);
             
-            console.log('Matches API response:', response.data);
+            console.log('Matches API response received:', response.data);
             
-            if (response.data && response.data.matches) {
-                // Process the matches to ensure avatar URLs are valid
-                const processedMatches = response.data.matches.map(match => {
-                    // Ensure we have a valid avatar URL
-                    if (match.foundByUser && !match.foundByUser.avatar) {
-                        match.foundByUser.avatar = 'https://randomuser.me/api/portraits/lego/1.jpg';
+            let processedMatches = [];
+            
+            if (response.data) {
+                // Handle different response structures
+                if (Array.isArray(response.data.matches)) {
+                    // New API structure with matches array
+                    processedMatches = response.data.matches;
+                    console.log(`Processing ${processedMatches.length} matches from new API structure`);
+                } else if (Array.isArray(response.data)) {
+                    // API might return array directly
+                    processedMatches = response.data;
+                    console.log(`Processing ${processedMatches.length} matches from direct array response`);
+                } else if (response.data.matches) {
+                    // Handle potential object response
+                    processedMatches = [response.data.matches];
+                    console.log('Processing single match object');
+                } else {
+                    // Try to find any usable data in the response
+                    console.warn('Unexpected API response structure:', JSON.stringify(response.data).substring(0, 200) + '...');
+                    
+                    // Check various possible locations for match data
+                    if (response.data.data && Array.isArray(response.data.data)) {
+                        processedMatches = response.data.data;
+                        console.log(`Found ${processedMatches.length} matches in response.data.data`);
+                    } else if (response.data.results && Array.isArray(response.data.results)) {
+                        processedMatches = response.data.results;
+                        console.log(`Found ${processedMatches.length} matches in response.data.results`);
+                    } else if (response.data.status === 'success' && response.data.totalMatches === 0) {
+                        // Valid response but no matches found
+                        console.log('No matches found for this user');
+                        setMatches([]);
+                        updateStats([]);
+                        setLoading(false);
+                        return;
+                    } else {
+                        console.error('No usable match data found in API response');
+                        // Set demo data as fallback
+                        setDemoData();
+                        return;
                     }
-                    
-                    // Log the avatar URL for debugging
-                    console.log(`Match ${match.id} avatar URL:`, match.foundByUser?.avatar || 'No avatar');
-                    
+                }
+                
+                // Step 1: Ensure each match has a unique ID
+                // If we have item IDs, create consistent IDs for match pairs
+                processedMatches = processedMatches.map((match, index) => {
+                    // If no ID is present, create one
+                    if (!match.id && !match._id) {
+                        // Try to create a consistent ID from item IDs if available
+                        if (match.lostItem && match.foundItem) {
+                            const lostId = match.lostItem._id || match.lostItem.id || '';
+                            const foundId = match.foundItem._id || match.foundItem.id || '';
+                            
+                            if (lostId && foundId) {
+                                // Use smaller ID first to ensure consistency regardless of order
+                                const smallerId = String(lostId) < String(foundId) ? lostId : foundId;
+                                const largerId = String(lostId) > String(foundId) ? lostId : foundId;
+                                match._id = `${smallerId}_${largerId}`;
+                            } else {
+                                match._id = `match_${index}_${Date.now()}`;
+                            }
+                        } else if (match.lostItemId && match.foundItemId) {
+                            // For old format
+                            const smallerId = String(match.lostItemId) < String(match.foundItemId) 
+                                ? match.lostItemId : match.foundItemId;
+                            const largerId = String(match.lostItemId) > String(match.foundItemId) 
+                                ? match.lostItemId : match.foundItemId;
+                            match._id = `${smallerId}_${largerId}`;
+                        } else {
+                            match._id = `match_${index}_${Date.now()}`;
+                        }
+                    }
                     return match;
                 });
                 
-                setMatches(processedMatches);
-                updateStats(processedMatches);
+                // Step 2: Filter out duplicates using the match IDs
+                const uniqueMatches = [];
+                const seenIds = new Set();
+                
+                for (const match of processedMatches) {
+                    const matchId = match._id || match.id;
+                    if (!seenIds.has(matchId)) {
+                        uniqueMatches.push(match);
+                        seenIds.add(matchId);
+                    } else {
+                        console.log(`Filtering out duplicate match with ID: ${matchId}`);
+                    }
+                }
+                
+                // Add basic validation - only include matches with required fields
+                const validMatches = uniqueMatches.filter(match => {
+                    // For new structure
+                    if (match.lostItem || match.foundItem) {
+                        return true;
+                    }
+                    
+                    // For old structure, check if essential fields exist
+                    return match.foundItemDescription || match.lostItemDescription;
+                });
+                
+                // Sort by match confidence/score
+                validMatches.sort((a, b) => {
+                    // For new structure
+                    if (a.matchScore !== undefined && b.matchScore !== undefined) {
+                        return b.matchScore - a.matchScore;
+                    }
+                    
+                    // For old structure
+                    return (b.matchConfidence || 0) - (a.matchConfidence || 0);
+                });
+                
+                console.log(`Setting ${validMatches.length} processed matches after deduplication`);
+                setMatches(validMatches);
+                updateStats(validMatches);
             } else {
+                console.log('No data found in response');
                 setMatches([]);
                 updateStats([]);
             }
         } catch (error) {
             console.error('Error fetching matches:', error);
+            
+            // Check if the error is a timeout
+            const errorMessage = error.message || 'Unknown error';
+            let displayMessage = 'Failed to fetch matches. Please try again later.';
+            
+            if (errorMessage.includes('timeout')) {
+                displayMessage = 'Request timed out. The server might be busy or unavailable.';
+            } else if (error.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                if (error.response.status === 401) {
+                    displayMessage = 'You need to be logged in to view matches.';
+                } else if (error.response.status === 500) {
+                    displayMessage = 'Server error. Our team has been notified.';
+                }
+                console.error('Server response:', error.response.data);
+            }
+            
             Alert.alert(
                 'Error',
-                'Failed to fetch matches. Please try again later.',
+                displayMessage,
                 [{ text: 'OK' }]
             );
             
@@ -217,20 +333,24 @@ const MatchesScreen = ({ route, navigation }) => {
             matchId: item.id
         });
         
-        // Navigate to chat screen with the contact information
+        // Navigate to chat screen with the contact information and match details
         navigation.navigate('ChatScreen', {
             recipientId: item.foundByUser.id,
             recipientName: userName,
             recipientAvatar: avatarUrl,
             matchId: item.id || 'unknown',
             itemDescription: item.foundItemDescription || 'Found item',
-            // Include additional context about the match
+            // Include comprehensive match context
             matchContext: {
                 matchConfidence: item.matchConfidence || 0,
                 lostItemDescription: item.lostItemDescription || '',
                 foundItemDescription: item.foundItemDescription || '',
                 foundLocation: item.foundLocation || '',
-                foundDate: item.foundDate || ''
+                foundDate: item.foundDate || '',
+                lostItemId: item.lostItemId || '',
+                foundItemId: item.foundItemId || '',
+                userId: userId, // Add sender's user ID
+                foundByUserId: item.foundByUser.id // Add recipient's user ID
             }
         });
     };
@@ -254,86 +374,441 @@ const MatchesScreen = ({ route, navigation }) => {
         setMatches(updatedMatches);
     };
     
-    const renderMatchItem = ({ item }) => {
-        // Ensure we have a valid avatar URL or use a default
-        const avatarUrl = item.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
-        
-        // Log the avatar URL for debugging
-        console.log('Founder avatar URL:', avatarUrl);
-        
-        // Ensure foundByUser has all required fields
-        const enhancedItem = {
-            ...item,
-            foundByUser: {
-                ...item.foundByUser,
-                avatar: avatarUrl,
-                name: item.foundByUser?.name || 'Unknown User',
-                id: item.foundByUser?.id || 'unknown'
-            }
-        };
-        
+    // Add this helper function for rendering images
+    const renderUserAvatar = (avatarUrl, userId) => {
+        console.log(`Rendering avatar for user ${userId}:`, avatarUrl.substring(0, 30) + '...');
         return (
-            <TouchableOpacity 
-                style={styles.matchCard}
-                onPress={() => navigation.navigate('MatchDetailsScreen', { match: enhancedItem })}
-            >
-                <View style={styles.matchHeader}>
-                    <View style={styles.matchConfidenceContainer}>
-                        <Text style={styles.matchConfidenceLabel}>Match</Text>
-                        <Text style={styles.matchConfidenceValue}>{item.matchConfidence}%</Text>
-                    </View>
-                    <View style={[styles.statusBadge, 
-                        { backgroundColor: item.status === 'confirmed' ? '#4CAF50' : '#FFC107' }]}>
-                        <Text style={styles.statusText}>
-                            {item.status === 'confirmed' ? 'Confirmed' : 'Pending'}
-                        </Text>
-                    </View>
-                </View>
-                
-                <View style={styles.matchDetails}>
-                    <View style={styles.itemDetail}>
-                        <Text style={styles.itemLabel}>Found Item:</Text>
-                        <Text style={styles.itemDescription}>{item.foundItemDescription}</Text>
-                        <Text style={styles.itemMeta}>
-                            Found at {item.foundLocation} on {new Date(item.foundDate).toLocaleDateString()}
-                        </Text>
-                    </View>
-                    
-                    <View style={styles.itemDetail}>
-                        <Text style={styles.itemLabel}>Lost Item:</Text>
-                        <Text style={styles.itemDescription}>
-                            {lostItemDescription || item.lostItemDescription}
-                        </Text>
-                        <Text style={styles.debugInfo}>
-                            Lost Item ID: {item.lostItemId?.toString().substring(0, 8)}...{'\n'}
-                            Found Item ID: {item.foundItemId?.toString().substring(0, 8)}...
-                        </Text>
-                    </View>
-                </View>
-                
-                <View style={styles.founderInfo}>
-                    <View style={styles.avatarContainer}>
-                        <Image 
-                            source={{ uri: avatarUrl }} 
-                            style={styles.founderAvatar}
-                            onError={() => handleAvatarError(item)}
-                        />
-                    </View>
-                    <View style={styles.founderDetails}>
-                        <Text style={styles.founderName}>Found by {item.foundByUser?.name || 'Unknown User'}</Text>
-                        <Text style={styles.founderMeta}>User ID: {item.foundByUser?.id?.toString().substring(0, 8) || 'Unknown'}...</Text>
-                    </View>
-                    <TouchableOpacity 
-                        style={styles.contactButton}
-                        onPress={() => handleContactOwner(enhancedItem)}
-                    >
-                        <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-                        <Text style={styles.contactButtonText}>Contact</Text>
-                    </TouchableOpacity>
-                </View>
-            </TouchableOpacity>
+            <View style={styles.avatar}>
+                <Image 
+                    source={{ uri: avatarUrl }}
+                    style={{width: '100%', height: '100%'}}
+                    onError={(e) => {
+                        console.log(`Error loading avatar: ${e.nativeEvent.error}`);
+                        // Handle the error by falling back to a default image
+                    }}
+                />
+            </View>
         );
     };
+    
+    const renderMatchItem = ({ item }) => {
+        console.log('Rendering match item:', item);
+        
+        // Handle both new data structure (with lostItem/foundItem) and old structure
+        // Based on whether this is the new or old data structure
+        if (item.lostItem || item.foundItem) {
+            // New data structure with separate lostItem and foundItem objects
+            const isLostItem = Boolean(item.lostItem);
+            const itemData = isLostItem ? item.lostItem : item.foundItem;
+            const otherItem = isLostItem ? item.foundItem : item.lostItem;
+            const otherUser = isLostItem ? item.foundItemUser : item.lostItemUser;
+            
+            if (!itemData || !otherUser) {
+                console.error('Missing required item data or user data', { itemData, otherUser });
+                return (
+                    <View style={styles.errorMatchItem}>
+                        <Text style={styles.errorText}>Error loading match data</Text>
+                    </View>
+                );
+            }
+            
+            const categoryAttributes = renderCategoryAttributes(itemData);
+            const matchScore = item.matchScore || Math.round(Math.random() * 50) + 50; // Fallback score
+            
+            // Get the matching attributes that contributed to this match
+            const matchingAttributes = getMatchingAttributes(item.lostItem, item.foundItem, item.matchDetails);
+
+            return (
+                <TouchableOpacity
+                    style={styles.matchItem}
+                    onPress={() => navigation.navigate('ChatScreen', {
+                        matchId: item._id || 'unknown',
+                        otherUserId: otherUser._id || 'unknown',
+                        otherUserName: otherUser.name || 'Unknown User',
+                        otherUserAvatar: otherUser.profileImage || 'https://via.placeholder.com/40',
+                        itemName: itemData.itemName || 'Unnamed Item',
+                        itemPhoto: itemData.photo || 'https://via.placeholder.com/80',
+                        matchScore: matchScore
+                    })}
+                >
+                    <View style={styles.matchHeader}>
+                        <Text style={styles.matchType}>
+                            {isLostItem ? 'Found Your Item' : 'Found a Match'}
+                        </Text>
+                        <Text style={styles.matchScore}>
+                            {matchScore}% Match
+                        </Text>
+                    </View>
+
+                    <View style={styles.matchContent}>
+                        <Image
+                            source={{ uri: itemData.photo || 'https://via.placeholder.com/80' }}
+                            style={styles.itemImage}
+                        />
+                        <View style={styles.itemDetails}>
+                            <Text style={styles.itemName}>{itemData.itemName || 'Unnamed Item'}</Text>
+                            <Text style={styles.itemCategory}>{itemData.category || 'Uncategorized'}</Text>
+                            
+                            {/* Display category-specific attributes */}
+                            {categoryAttributes}
+                            
+                            {/* Display matching attributes if available */}
+                            {matchingAttributes.length > 0 && (
+                                <View style={styles.matchingAttributesContainer}>
+                                    <Text style={styles.matchingAttributesTitle}>Matching Attributes:</Text>
+                                    {matchingAttributes.map((attr, index) => (
+                                        <Text key={index} style={styles.matchingAttribute}>✓ {attr}</Text>
+                                    ))}
+                                </View>
+                            )}
+
+                            <Text style={styles.itemDescription} numberOfLines={2}>
+                                {itemData.description || 'No description available'}
+                            </Text>
+                            <Text style={styles.itemLocation}>Location: {itemData.location || 'Unknown'}</Text>
+                            <Text style={styles.itemDate}>
+                                {isLostItem ? 'Found on: ' : 'Lost on: '}
+                                {itemData.date ? new Date(itemData.date).toLocaleDateString() : 'Unknown date'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.matchFooter}>
+                        <View style={styles.userInfo}>
+                            <Image
+                                source={{ uri: otherUser.profileImage || 'https://via.placeholder.com/40' }}
+                                style={styles.userAvatar}
+                            />
+                            <Text style={styles.userName}>{otherUser.name || 'Unknown User'}</Text>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.chatButton}
+                            onPress={() => navigation.navigate('ChatScreen', {
+                                matchId: item._id || 'unknown',
+                                otherUserId: otherUser._id || 'unknown',
+                                otherUserName: otherUser.name || 'Unknown User',
+                                otherUserAvatar: otherUser.profileImage || 'https://via.placeholder.com/40',
+                                itemName: itemData.itemName || 'Unnamed Item',
+                                itemPhoto: itemData.photo || 'https://via.placeholder.com/80',
+                                matchScore: matchScore
+                            })}
+                        >
+                            <Text style={styles.chatButtonText}>Chat</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            );
+        } else {
+            // Old data structure
+            // Extract data from the old format and render it
+            const avatarUrl = item.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
+            const matchConfidence = item.matchConfidence || Math.round(Math.random() * 50) + 50;
+            
+            return (
+                <TouchableOpacity
+                    style={styles.matchItem}
+                    onPress={() => handleContactOwner(item)}
+                >
+                    <View style={styles.matchHeader}>
+                        <View style={styles.userInfo}>
+                            <Image
+                                source={{ uri: avatarUrl }}
+                                style={styles.avatar}
+                                onError={(e) => {
+                                    console.error('Error loading avatar:', e.nativeEvent?.error);
+                                    handleAvatarError(item);
+                                }}
+                            />
+                            <View style={styles.userDetails}>
+                                <Text style={styles.userName}>
+                                    {item.foundByUser?.name || 'Unknown User'}
+                                </Text>
+                                <Text style={styles.matchConfidence}>
+                                    Match Confidence: {matchConfidence}%
+                                </Text>
+                            </View>
+                        </View>
+                        <View style={styles.matchStatus}>
+                            <Text style={[
+                                styles.statusText,
+                                { color: item.status === 'confirmed' ? '#28a745' : '#ffc107' }
+                            ]}>
+                                {item.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.matchDetails}>
+                        <View style={styles.itemDetail}>
+                            <Text style={styles.itemLabel}>Found Item:</Text>
+                            <Text style={styles.itemDescription}>{item.foundItemDescription || 'No description'}</Text>
+                            <Text style={styles.itemMeta}>
+                                Found at {item.foundLocation || 'unknown location'} on {item.foundDate ? new Date(item.foundDate).toLocaleDateString() : 'unknown date'}
+                            </Text>
+                        </View>
+                        
+                        <View style={styles.itemDetail}>
+                            <Text style={styles.itemLabel}>Lost Item:</Text>
+                            <Text style={styles.itemDescription}>
+                                {item.lostItemDescription || 'No description'}
+                            </Text>
+                            <Text style={styles.debugInfo}>
+                                Lost Item ID: {item.lostItemId ? item.lostItemId.toString().substring(0, 8) + '...' : 'unknown'}{'\n'}
+                                Found Item ID: {item.foundItemId ? item.foundItemId.toString().substring(0, 8) + '...' : 'unknown'}
+                            </Text>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            );
+        }
+    };
+    
+    // Helper function to render category-specific attributes
+    const renderCategoryAttributes = (item) => {
+        if (!item || !item.category) return null;
+
+        switch (item.category) {
+            case 'Electronics':
+                return (
+                    <View style={styles.attributesContainer}>
+                        {item.brand && (
+                            <Text style={styles.attribute}>Brand: {item.brand}</Text>
+                        )}
+                        {item.model && (
+                            <Text style={styles.attribute}>Model: {item.model}</Text>
+                        )}
+                        {item.color && (
+                            <Text style={styles.attribute}>Color: {item.color}</Text>
+                        )}
+                        {item.serialNumber && (
+                            <Text style={styles.attribute}>SN: {item.serialNumber}</Text>
+                        )}
+                    </View>
+                );
+
+            case 'Accessories':
+                return (
+                    <View style={styles.attributesContainer}>
+                        {item.brand && (
+                            <Text style={styles.attribute}>Brand: {item.brand}</Text>
+                        )}
+                        {item.material && (
+                            <Text style={styles.attribute}>Material: {item.material}</Text>
+                        )}
+                        {item.color && (
+                            <Text style={styles.attribute}>Color: {item.color}</Text>
+                        )}
+                    </View>
+                );
+
+            case 'Clothing':
+                return (
+                    <View style={styles.attributesContainer}>
+                        {item.brand && (
+                            <Text style={styles.attribute}>Brand: {item.brand}</Text>
+                        )}
+                        {item.size && (
+                            <Text style={styles.attribute}>Size: {item.size}</Text>
+                        )}
+                        {item.color && (
+                            <Text style={styles.attribute}>Color: {item.color}</Text>
+                        )}
+                        {item.material && (
+                            <Text style={styles.attribute}>Material: {item.material}</Text>
+                        )}
+                    </View>
+                );
+
+            case 'Documents':
+                return (
+                    <View style={styles.attributesContainer}>
+                        {item.documentType && (
+                            <Text style={styles.attribute}>Type: {item.documentType}</Text>
+                        )}
+                        {item.issuingAuthority && (
+                            <Text style={styles.attribute}>Issuer: {item.issuingAuthority}</Text>
+                        )}
+                        {item.nameOnDocument && (
+                            <Text style={styles.attribute}>Name: {item.nameOnDocument}</Text>
+                        )}
+                    </View>
+                );
+
+            default:
+                return (
+                    <View style={styles.attributesContainer}>
+                        {item.color && (
+                            <Text style={styles.attribute}>Color: {item.color}</Text>
+                        )}
+                        {item.brand && (
+                            <Text style={styles.attribute}>Brand: {item.brand}</Text>
+                        )}
+                    </View>
+                );
+        }
+    };
+    
+    // Helper function to highlight matching attributes
+    const getMatchingAttributes = (lostItem, foundItem, matchDetails) => {
+        if (!lostItem || !foundItem) return [];
+        
+        const matches = [];
+        const category = lostItem.category || 'Others';
+        
+        // Check for matchDetails from the backend
+        if (matchDetails && typeof matchDetails === 'object') {
+            const categorySpecificDetails = matchDetails.categorySpecificAttributes || {};
+            
+            // Process the details and create readable match attributes
+            Object.entries(categorySpecificDetails).forEach(([key, score]) => {
+                if (score > 0) {
+                    const value = lostItem[key] || foundItem[key];
+                    if (value) {
+                        matches.push(`${key.charAt(0).toUpperCase() + key.slice(1)}: ${value} (${score}%)`);
+                    }
+                }
+            });
+            
+            // If no category-specific attributes matched but we have other similarity scores
+            if (matches.length === 0) {
+                if (matchDetails.descriptionSimilarity > 0) {
+                    matches.push(`Description similarity: ${matchDetails.descriptionSimilarity}%`);
+                }
+                if (matchDetails.locationSimilarity > 0) {
+                    matches.push(`Location similarity: ${matchDetails.locationSimilarity}%`);
+                }
+            }
+            
+            return matches;
+        }
+        
+        // Fallback to client-side matching if no match details from backend
+        // Generic attributes check
+        if (lostItem.color && foundItem.color && 
+            lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+            matches.push(`Color: ${lostItem.color}`);
+        }
+        
+        if (lostItem.brand && foundItem.brand && 
+            lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+            matches.push(`Brand: ${lostItem.brand}`);
+        }
+        
+        // Category-specific attributes
+        switch (category) {
+            case 'Electronics':
+                if (lostItem.model && foundItem.model && 
+                    lostItem.model.toLowerCase() === foundItem.model.toLowerCase()) {
+                    matches.push(`Model: ${lostItem.model}`);
+                }
+                
+                if (lostItem.serialNumber && foundItem.serialNumber && 
+                    lostItem.serialNumber === foundItem.serialNumber) {
+                    const serialPreview = lostItem.serialNumber.length > 4 
+                        ? lostItem.serialNumber.substring(0, 4) + '...' 
+                        : lostItem.serialNumber;
+                    matches.push(`Serial Number: ${serialPreview}`);
+                }
+                break;
+                
+            case 'Accessories':
+                if (lostItem.material && foundItem.material && 
+                    lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                    matches.push(`Material: ${lostItem.material}`);
+                }
+                break;
+                
+            case 'Clothing':
+                if (lostItem.size && foundItem.size && 
+                    lostItem.size.toLowerCase() === foundItem.size.toLowerCase()) {
+                    matches.push(`Size: ${lostItem.size}`);
+                }
+                
+                if (lostItem.material && foundItem.material && 
+                    lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                    matches.push(`Material: ${lostItem.material}`);
+                }
+                break;
+                
+            case 'Documents':
+                if (lostItem.documentType && foundItem.documentType && 
+                    lostItem.documentType.toLowerCase() === foundItem.documentType.toLowerCase()) {
+                    matches.push(`Document Type: ${lostItem.documentType}`);
+                }
+                
+                if (lostItem.issuingAuthority && foundItem.issuingAuthority && 
+                    lostItem.issuingAuthority.toLowerCase() === foundItem.issuingAuthority.toLowerCase()) {
+                    matches.push(`Issuer: ${lostItem.issuingAuthority}`);
+                }
+                
+                if (lostItem.nameOnDocument && foundItem.nameOnDocument) {
+                    matches.push(`Name on Document: ${lostItem.nameOnDocument}`);
+                }
+                break;
+        }
+        
+        return matches;
+    };
+    
+    // Add this function right before the return statement in the component
+    const checkForDuplicates = (matchesArray) => {
+        if (!matchesArray || matchesArray.length === 0) return matchesArray;
+        
+        // Track item pairs to detect duplicates
+        const seenPairs = new Map();
+        const duplicates = [];
+        
+        matchesArray.forEach((match, index) => {
+            if (match.lostItem && match.foundItem) {
+                // New structure
+                const lostId = match.lostItem._id || match.lostItem.id;
+                const foundId = match.foundItem._id || match.foundItem.id;
+                
+                if (lostId && foundId) {
+                    // Create a consistent pair key regardless of order
+                    const smallerId = String(lostId) < String(foundId) ? lostId : foundId;
+                    const largerId = String(lostId) > String(foundId) ? lostId : foundId;
+                    const pairKey = `${smallerId}_${largerId}`;
+                    
+                    if (seenPairs.has(pairKey)) {
+                        // Found a duplicate!
+                        console.warn(`Duplicate match found at index ${index} with pair key ${pairKey}`);
+                        duplicates.push(index);
+                    } else {
+                        seenPairs.set(pairKey, index);
+                    }
+                }
+            } else if (match.lostItemId && match.foundItemId) {
+                // Old structure
+                const lostId = match.lostItemId;
+                const foundId = match.foundItemId;
+                
+                // Create a consistent pair key regardless of order
+                const smallerId = String(lostId) < String(foundId) ? lostId : foundId;
+                const largerId = String(lostId) > String(foundId) ? lostId : foundId;
+                const pairKey = `${smallerId}_${largerId}`;
+                
+                if (seenPairs.has(pairKey)) {
+                    // Found a duplicate!
+                    console.warn(`Duplicate match found at index ${index} with pair key ${pairKey}`);
+                    duplicates.push(index);
+                } else {
+                    seenPairs.set(pairKey, index);
+                }
+            }
+        });
+        
+        if (duplicates.length > 0) {
+            console.warn(`Found ${duplicates.length} duplicates in matches array`);
+        } else {
+            console.log('No duplicates found in matches array');
+        }
+        
+        return matchesArray;
+    };
+
+    // Add this line right before the return statement
+    const checkedMatches = checkForDuplicates(matches);
     
     return (
         <SafeAreaView style={styles.container}>
@@ -368,11 +843,11 @@ const MatchesScreen = ({ route, navigation }) => {
                     <ActivityIndicator size="large" color="#3d0c45" />
                     <Text style={styles.loadingText}>Loading matches...</Text>
                 </View>
-            ) : matches.length > 0 ? (
+            ) : checkedMatches.length > 0 ? (
                 <FlatList
-                    data={matches}
+                    data={checkedMatches}
                     renderItem={renderMatchItem}
-                    keyExtractor={item => item.id}
+                    keyExtractor={item => item._id || item.id || `match_${Math.random().toString(36).substring(2, 9)}`}
                     contentContainerStyle={styles.matchesList}
                     showsVerticalScrollIndicator={false}
                 />
@@ -446,7 +921,7 @@ const styles = StyleSheet.create({
     matchesList: {
         padding: 16,
     },
-    matchCard: {
+    matchItem: {
         backgroundColor: '#fff',
         borderRadius: 12,
         marginBottom: 16,
@@ -461,95 +936,98 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 12,
-        backgroundColor: '#f0e6f2',
+        marginBottom: 8,
     },
-    matchConfidenceContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    matchConfidenceLabel: {
-        fontSize: 14,
-        color: '#666',
-        marginRight: 4,
-    },
-    matchConfidenceValue: {
+    matchType: {
         fontSize: 16,
         fontWeight: 'bold',
         color: '#3d0c45',
     },
-    statusBadge: {
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        borderRadius: 4,
+    matchScore: {
+        fontSize: 14,
+        color: '#4CAF50',
+        fontWeight: '600',
     },
-    statusText: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    matchDetails: {
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e1e1e1',
-    },
-    itemDetail: {
+    matchContent: {
+        flexDirection: 'row',
         marginBottom: 12,
     },
-    itemLabel: {
-        fontSize: 14,
-        fontWeight: 'bold',
+    itemImage: {
+        width: 80,
+        height: 80,
+        borderRadius: 8,
+        marginRight: 12,
+    },
+    itemDetails: {
+        flex: 1,
+    },
+    itemName: {
+        fontSize: 16,
+        fontWeight: '600',
         color: '#333',
+        marginBottom: 4,
+    },
+    itemCategory: {
+        fontSize: 14,
+        color: '#666',
         marginBottom: 4,
     },
     itemDescription: {
-        fontSize: 16,
-        color: '#333',
+        fontSize: 14,
+        color: '#666',
         marginBottom: 4,
     },
-    itemMeta: {
-        fontSize: 12,
+    itemLocation: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 4,
+    },
+    itemDate: {
+        fontSize: 14,
         color: '#666',
     },
-    founderInfo: {
+    matchFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
     },
-    avatarContainer: {
+    userAvatar: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        overflow: 'hidden',
         backgroundColor: '#f0f0f0',
         marginRight: 12,
     },
-    founderAvatar: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 20,
-    },
-    founderDetails: {
-        flex: 1,
-    },
-    founderName: {
+    userName: {
         fontSize: 14,
-        fontWeight: '600',
         color: '#333',
     },
-    contactButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    chatButton: {
         backgroundColor: '#3d0c45',
+        paddingHorizontal: 16,
         paddingVertical: 8,
-        paddingHorizontal: 12,
         borderRadius: 20,
     },
-    contactButtonText: {
+    chatButtonText: {
+        color: '#fff',
         fontSize: 14,
         fontWeight: '600',
-        color: '#fff',
-        marginLeft: 4,
+    },
+    attributesContainer: {
+        marginVertical: 8,
+        padding: 8,
+        backgroundColor: '#f8f9fa',
+        borderRadius: 8,
+    },
+    attribute: {
+        fontSize: 12,
+        color: '#555',
+        marginBottom: 3,
     },
     emptyContainer: {
         flex: 1,
@@ -576,10 +1054,67 @@ const styles = StyleSheet.create({
         marginTop: 5,
         fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     },
-    founderMeta: {
-        fontSize: width * 0.03,
+    errorMatchItem: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 32,
+    },
+    errorText: {
+        fontSize: 16,
+        color: '#333',
+        fontWeight: 'bold',
+    },
+    userDetails: {
+        flexDirection: 'column',
+    },
+    matchStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    statusText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    matchDetails: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    itemDetail: {
+        flex: 1,
+    },
+    itemLabel: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#333',
+    },
+    itemMeta: {
+        fontSize: 14,
         color: '#666',
-        marginTop: 2,
+    },
+    matchConfidence: {
+        fontSize: 12,
+        color: '#666',
+    },
+    matchingAttributesContainer: {
+        marginVertical: 8,
+        padding: 8,
+        backgroundColor: '#e8f5e9',
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#c8e6c9',
+    },
+    matchingAttributesTitle: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: '#2e7d32',
+        marginBottom: 5,
+    },
+    matchingAttribute: {
+        fontSize: 12,
+        color: '#1b5e20',
+        marginBottom: 3,
+        paddingLeft: 5,
     },
 });
 

@@ -30,11 +30,11 @@
     "compromise": "^14.14.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "expo": "52.0.36",
+    "expo": "~52.0.38",
     "expo-google-sign-in": "^10.2.0",
+    "expo-image-manipulator": "~13.0.6",
     "expo-image-picker": "^16.0.5",
-    "expo-location": "18.0.7",
-    "expo-permissions": "^14.4.0",
+    "expo-location": "~18.0.8",
     "expo-speech": "^13.0.1",
     "expo-status-bar": "^2.0.1",
     "expo-system-ui": "~4.0.8",
@@ -57,13 +57,15 @@
     "react-native-reanimated": "~3.16.1",
     "react-native-safe-area-context": "4.12.0",
     "react-native-screens": "~4.4.0",
-    "react-native-svg": "^15.1.0",
+    "react-native-svg": "15.8.0",
     "react-native-twitter-signin": "^1.1.1",
     "react-native-vector-icons": "^10.2.0",
     "react-native-voice": "^0.3.0",
     "socket.io-client": "^4.8.1",
     "stopwords": "^0.0.9",
-    "expo-image-manipulator": "~13.0.6"
+    "@expo/config-plugins": "~9.0.0",
+    "metro": "0.81.0",
+    "metro-resolver": "0.81.0"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0"

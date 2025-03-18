@@ -241,14 +241,8 @@ const ChatListScreen = ({ navigation }) => {
             <Ionicons name="chatbubble-ellipses-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No conversations yet</Text>
             <Text style={styles.emptySubText}>
-                Your conversations will appear here
+                Your conversations will appear here when you have matches
             </Text>
-            <TouchableOpacity 
-                style={styles.searchButton}
-                onPress={() => navigation.navigate('SearchScreen')}
-            >
-                <Text style={styles.searchButtonText}>Find people to chat with</Text>
-            </TouchableOpacity>
         </View>
     );
 
@@ -268,12 +262,6 @@ const ChatListScreen = ({ navigation }) => {
                         onPress={onRefresh}
                     >
                         <Ionicons name="refresh" size={normalize(24)} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={styles.headerButton}
-                        onPress={() => navigation.navigate('SearchScreen')}
-                    >
-                        <Ionicons name="search" size={normalize(24)} color="#fff" />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -443,18 +431,6 @@ const styles = StyleSheet.create({
         color: '#999',
         marginTop: normalize(8),
         textAlign: 'center',
-    },
-    searchButton: {
-        marginTop: normalize(24),
-        backgroundColor: '#3b0b40',
-        paddingHorizontal: normalize(20),
-        paddingVertical: normalize(12),
-        borderRadius: normalize(8),
-    },
-    searchButtonText: {
-        color: '#fff',
-        fontSize: normalize(16),
-        fontWeight: 'bold',
     },
     unreadIndicator: {
         width: normalize(10),

@@ -21,7 +21,7 @@ const lostItemSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others']
+    enum: ['Electronics', 'Accessories', 'Clothing', 'Documents', 'Others']
   },
   date: {
     type: Date,
@@ -47,6 +47,66 @@ const lostItemSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  
+  // Category-specific attributes
+  // Electronics
+  brand: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  model: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  color: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  serialNumber: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  
+  // Accessories and Clothing
+  material: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  size: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  
+  // Documents
+  documentType: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  issuingAuthority: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  nameOnDocument: {
+    type: String,
+    required: false,
+    trim: true
+  },
+  
+  // Dynamic attributes storage (for future extensibility)
+  attributes: {
+    type: Map,
+    of: String,
+    default: {}
+  },
+  
   _embedding: {
     type: mongoose.Schema.Types.Mixed,
     required: false,
@@ -58,8 +118,14 @@ const lostItemSchema = new mongoose.Schema({
   }
 });
 
-// Create a text index on the description field for better text search
+// Create indexes for efficient querying
 lostItemSchema.index({ description: 'text' });
+lostItemSchema.index({ brand: 1 });
+lostItemSchema.index({ model: 1 });
+lostItemSchema.index({ category: 1 });
+lostItemSchema.index({ createdAt: -1 });
+lostItemSchema.index({ documentType: 1 });
+lostItemSchema.index({ material: 1 });
 
 const LostItem = mongoose.model('LostItem', lostItemSchema);
 export default LostItem;

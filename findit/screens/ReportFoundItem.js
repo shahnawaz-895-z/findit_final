@@ -33,11 +33,19 @@ const ReportFoundItem = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [itemName, setItemName] = useState('');
   const [fullScreenMap, setFullScreenMap] = useState(false);
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [color, setColor] = useState('');
+  const [size, setSize] = useState('');
+  const [material, setMaterial] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [documentType, setDocumentType] = useState('');
+  const [issuingAuthority, setIssuingAuthority] = useState('');
+  const [nameOnDocument, setNameOnDocument] = useState('');
 
   const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
   const HUGGING_FACE_API_KEY = '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';
-  const categories = ['Electronics', 'Bags', 'Clothing', 'Accessories', 'Documents', 'Others'];
-
+gt
   useEffect(() => {
     const getLocationPermission = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -267,32 +275,9 @@ const ReportFoundItem = () => {
         setDescription(generatedDescription);
       }
 
-      // Check if location is already set, if not, detect current location
-      if (!location || location.trim() === '') {
-        try {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status === 'granted') {
-            const userLocation = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.High
-            });
-            
-            setGeolocation(userLocation.coords);
-            setSelectedLocation(userLocation.coords);
-            
-            const address = await Location.reverseGeocodeAsync(userLocation.coords);
-            if (address && address.length > 0) {
-              const formattedAddress = `${address[0]?.name ? address[0].name + ', ' : ''}${address[0]?.street ? address[0].street + ', ' : ''}${address[0]?.city ? address[0].city + ', ' : ''}${address[0]?.region ? address[0].region + ', ' : ''}${address[0]?.country || ''}`;
-              setLocation(formattedAddress.replace(/,\s*$/, ''));
-            }
-          }
-        } catch (locationError) {
-          console.error('Error getting location during image upload:', locationError);
-          // Don't show an alert here to avoid interrupting the image upload flow
-        }
-      }
     } catch (error) {
       console.error('Error processing image:', error);
-      Alert.alert('Error processing the image. Please try again.');
+      Alert.alert('Error', 'Failed to process the image. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -416,6 +401,31 @@ const ReportFoundItem = () => {
       formData.append('date', date.toISOString());
       formData.append('itemName', itemName);
       
+      // Add category-specific attributes
+      if (category === 'Electronics') {
+        if (brand) formData.append('brand', brand);
+        if (model) formData.append('model', model);
+        if (color) formData.append('color', color);
+        if (serialNumber) formData.append('serialNumber', serialNumber);
+      } else if (category === 'Accessories') {
+        if (brand) formData.append('brand', brand);
+        if (material) formData.append('material', material);
+        if (color) formData.append('color', color);
+      } else if (category === 'Clothing') {
+        if (brand) formData.append('brand', brand);
+        if (size) formData.append('size', size);
+        if (color) formData.append('color', color);
+        if (material) formData.append('material', material);
+      } else if (category === 'Documents') {
+        if (documentType) formData.append('documentType', documentType);
+        if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
+        if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
+      } else {
+        // Others category - add any general attributes
+        if (color) formData.append('color', color);
+        if (brand) formData.append('brand', brand);
+      }
+      
       // Add user ID if available
       if (userId) {
         formData.append('userId', userId);
@@ -426,7 +436,7 @@ const ReportFoundItem = () => {
         formData.append('latitude', selectedLocation.latitude);
         formData.append('longitude', selectedLocation.longitude);
       }
-      
+
       // Process photo if available
       if (photo) {
         // Check image size and compress if needed
@@ -490,6 +500,15 @@ const ReportFoundItem = () => {
                 setDate(new Date());
                 setCategory('');
                 setItemName('');
+                setBrand('');
+                setModel('');
+                setColor('');
+                setSize('');
+                setMaterial('');
+                setSerialNumber('');
+                setDocumentType('');
+                setIssuingAuthority('');
+                setNameOnDocument('');
                 // Navigate back to home
                 navigation.navigate('HomePage');
               },
@@ -500,10 +519,232 @@ const ReportFoundItem = () => {
         Alert.alert('Error', 'Failed to report found item. Please try again.');
       }
     } catch (error) {
-      console.error('Error submitting form:', error);
-      Alert.alert('Error', 'Failed to report found item. Please try again.');
+      console.error('Error submitting found item:', error);
+      Alert.alert('Error', 'Failed to submit found item report. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Function to reset all category-specific fields
+  const resetCategoryFields = () => {
+    setBrand('');
+    setModel('');
+    setColor('');
+    setSerialNumber('');
+    setMaterial('');
+    setSize('');
+    setDocumentType('');
+    setIssuingAuthority('');
+    setNameOnDocument('');
+  };
+
+  // Handler for category change
+  const handleCategoryChange = (selectedCategory) => {
+    setCategory(selectedCategory);
+    resetCategoryFields();
+  };
+
+  // Render category-specific attribute fields
+  const renderCategoryFields = () => {
+    switch (category) {
+      case 'Electronics':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Electronics Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Apple, Samsung, Dell"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Model</Text>
+              <TextInput
+                style={styles.input}
+                value={model}
+                onChangeText={setModel}
+                placeholder="e.g., iPhone 14 Pro, MacBook Air M2"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Silver, Black, Blue"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Serial Number (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={serialNumber}
+                onChangeText={setSerialNumber}
+                placeholder="Enter if visible for verification"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Accessories':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Accessories Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Gucci, Fossil, Herschel"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Material</Text>
+              <TextInput
+                style={styles.input}
+                value={material}
+                onChangeText={setMaterial}
+                placeholder="e.g., Leather, Metal, Fabric"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Brown, Black, Tan"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Clothing':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Clothing Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Nike, Adidas, Zara"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Size</Text>
+              <TextInput
+                style={styles.input}
+                value={size}
+                onChangeText={setSize}
+                placeholder="e.g., S, M, L, XL, 42, 10"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Blue, Red, Black"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Material</Text>
+              <TextInput
+                style={styles.input}
+                value={material}
+                onChangeText={setMaterial}
+                placeholder="e.g., Cotton, Polyester, Denim"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Documents':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Document Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Document Type</Text>
+              <TextInput
+                style={styles.input}
+                value={documentType}
+                onChangeText={setDocumentType}
+                placeholder="e.g., Passport, Driver's License, Student ID"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Issuing Authority</Text>
+              <TextInput
+                style={styles.input}
+                value={issuingAuthority}
+                onChangeText={setIssuingAuthority}
+                placeholder="e.g., Government, University, Company"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Name on Document (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={nameOnDocument}
+                onChangeText={setNameOnDocument}
+                placeholder="Enter if visible for verification"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Others':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Item Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand (if applicable)</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="Enter if visible"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="Enter the color of the item"
+              />
+            </View>
+          </View>
+        );
+        
+      default:
+        return null;
     }
   };
 
@@ -621,20 +862,6 @@ const ReportFoundItem = () => {
             keyboardType="phone-pad"
             placeholderTextColor="#666"
           />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Ionicons name="list-outline" size={24} color="#3d0c45" style={styles.icon} />
-          <Picker
-            selectedValue={category}
-            onValueChange={(itemValue) => setCategory(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Category" value="" />
-            {categories.map((item, index) => (
-              <Picker.Item key={index} label={item} value={item} />
-            ))}
-          </Picker>
         </View>
 
         <View style={styles.inputContainer}>
@@ -787,6 +1014,34 @@ const ReportFoundItem = () => {
             />
           </View>
         </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.categoryContainer}>
+            {['Electronics', 'Accessories', 'Clothing', 'Documents', 'Others'].map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[
+                  styles.categoryButton,
+                  category === item && styles.categoryButtonActive,
+                ]}
+                onPress={() => handleCategoryChange(item)}
+              >
+                <Text
+                  style={[
+                    styles.categoryButtonText,
+                    category === item && styles.categoryButtonTextActive,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        
+        {/* Render category-specific fields */}
+        {category && renderCategoryFields()}
 
         <TouchableOpacity 
           style={styles.submitButton} 
@@ -1091,6 +1346,46 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 5,
     zIndex: 10,
+  },
+  section: {
+    marginBottom: 20,
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#3d0c45',
+    marginBottom: 15,
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 10,
+  },
+  categoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    marginBottom: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  categoryButtonActive: {
+    backgroundColor: '#3d0c45',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  categoryButtonTextActive: {
+    color: '#fff',
   },
 });
 

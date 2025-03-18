@@ -594,12 +594,6 @@ const HomePage = ({ navigation }) => {
           <Text style={[styles.navText, { color: '#3d0c45' }]}>Home</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem} onPress={() => navigation.navigate('SearchScreen')}>
-          <Icon name="search" size={24} color="#666" />
-          <Text style={styles.navText}>Search</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('ChatListScreen')}>
           <View style={styles.iconContainer}>
             <Icon name="chatbubble-ellipses" size={24} color="#666" />

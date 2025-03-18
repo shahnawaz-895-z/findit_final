@@ -17,7 +17,11 @@ import Notification from './notificationschema.js';
 // Import the matching system
 import { 
     findMatches, 
-    precomputeItemEmbedding 
+    precomputeItemEmbedding,
+    calculateMatchScore,
+    stringSimilarity,
+    enhancedKeywordMatching,
+    calculateCategorySpecificScore
 } from './itemMatching.js';
 
 // Load environment variables
@@ -95,8 +99,20 @@ io.on('connection', (socket) => {
     // Send and receive messages
     socket.on('sendMessage', async (message) => {
         try {
-            const { receiverId, senderId, text, messageId } = message;
+            const { receiverId, senderId, text, messageId, matchId } = message;
             console.log(`Received message from ${senderId} to ${receiverId}: ${text}`);
+            
+            // Check if sender and receiver have a match before allowing messages
+            const hasMatch = await checkUsersHaveMatch(senderId, receiverId);
+            
+            if (!hasMatch) {
+                // Emit error back to sender
+                socket.emit('messageError', {
+                    error: 'Cannot send messages - no match exists between these users',
+                    clientMessageId: messageId
+                });
+                return;
+            }
             
             // Check if a message with this client-generated ID already exists
             if (messageId) {
@@ -124,7 +140,8 @@ io.on('connection', (socket) => {
                 text,
                 createdAt: new Date(),
                 read: false,
-                clientMessageId: messageId || null // Store the client-generated ID if provided
+                clientMessageId: messageId || null, // Store the client-generated ID if provided
+                matchId: matchId || null // Store the match ID if provided
             });
             
             const savedMessage = await newMessage.save();
@@ -136,7 +153,8 @@ io.on('connection', (socket) => {
                 senderId, 
                 text,
                 createdAt: savedMessage.createdAt,
-                clientMessageId: messageId
+                clientMessageId: messageId,
+                matchId: matchId
             });
             
             // Emit confirmation back to the sender
@@ -145,7 +163,8 @@ io.on('connection', (socket) => {
                 senderId, 
                 text,
                 createdAt: savedMessage.createdAt,
-                clientMessageId: messageId
+                clientMessageId: messageId,
+                matchId: matchId
             });
             
             console.log(`Message sent from ${senderId} to ${receiverId}: ${text}`);
@@ -1010,12 +1029,22 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
 // API endpoint for directly saving messages
 app.post('/api/messages', async (req, res) => {
     try {
-        const { senderId, receiverId, text, messageId } = req.body;
+        const { senderId, receiverId, text, messageId, matchId } = req.body;
         
         if (!senderId || !receiverId || !text) {
             return res.status(400).json({ 
                 status: 'error', 
                 message: 'Missing required fields: senderId, receiverId, text' 
+            });
+        }
+        
+        // Check if sender and receiver have a match before allowing messages
+        const hasMatch = await checkUsersHaveMatch(senderId, receiverId);
+        
+        if (!hasMatch) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Cannot send messages - no match exists between these users'
             });
         }
         
@@ -1041,7 +1070,8 @@ app.post('/api/messages', async (req, res) => {
             text,
             createdAt: new Date(),
             read: false,
-            clientMessageId: messageId || null // Store the client-generated ID if provided
+            clientMessageId: messageId || null, // Store the client-generated ID if provided
+            matchId: matchId || null // Store the match ID if provided
         });
         
         const savedMessage = await newMessage.save();
@@ -1054,7 +1084,8 @@ app.post('/api/messages', async (req, res) => {
                 senderId, 
                 text,
                 createdAt: savedMessage.createdAt,
-                clientMessageId: messageId // Include the client-generated ID
+                clientMessageId: messageId, // Include the client-generated ID
+                matchId: matchId // Include the match ID
             });
         } catch (socketError) {
             console.error('Error emitting message via Socket.IO:', socketError);
@@ -1419,212 +1450,198 @@ app.get('/user/:userId/founditems', async (req, res) => {
 // **Get User Matches**
 app.get('/user-matches/:userId', async (req, res) => {
     try {
-        const { userId } = req.params;
-        
-        if (!userId) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'User ID is required'
-            });
+        const userId = req.params.userId;
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid user ID' });
         }
-        
+
         console.log(`Fetching matches for user: ${userId}`);
-        
-        // Find all lost items by this user
-        const userLostItems = await LostItem.find({ userId: userId });
-        
-        console.log(`Found ${userLostItems.length} lost items for user ${userId}`);
-        
-        if (userLostItems.length === 0) {
-            // If no lost items, try to find all lost items (for testing)
-            console.log("No lost items found for this user. Fetching all lost items for testing...");
-            const allLostItems = await LostItem.find({});
+
+        // Get all lost items and found items for this user
+        const lostItems = await LostItem.find({ userId: userId });
+        const foundItems = await FoundItem.find({ userId: userId });
+
+        console.log(`Found ${lostItems.length} lost items and ${foundItems.length} found items for user ${userId}`);
+
+        // Create a set to track unique match IDs to avoid duplicates
+        const uniqueMatchIds = new Set();
+        const allMatches = [];
+
+        // Create a map of user details for efficiency
+        const userMap = new Map();
+
+        // Function to get user details (with caching)
+        async function getUserDetails(uid) {
+            if (!uid) return null;
             
-            if (allLostItems.length > 0) {
-                console.log(`Found ${allLostItems.length} lost items in total`);
-                userLostItems.push(...allLostItems);
-            } else {
-                return res.json({
-                    status: 'success',
-                    matches: [],
-                    message: 'No lost items found in the system'
-                });
+            if (userMap.has(uid)) {
+                return userMap.get(uid);
             }
+            
+            try {
+                const user = await User.findById(uid);
+                if (user) {
+                    const userInfo = {
+                        _id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        profileImage: user.profileImage // Use profileImage consistently
+                    };
+                    console.log(`Found user: ${user.name} (${user._id}), has profile image: ${!!user.profileImage}`);
+                    userMap.set(uid, userInfo);
+                    return userInfo;
+                }
+            } catch (error) {
+                console.error(`Error fetching user ${uid}:`, error);
+            }
+            
+            return null;
         }
-        
-        // Array to store all matches
-        let allMatches = [];
-        
-        // Find all users to get their names
-        const users = await User.find({});
-        console.log(`Found ${users.length} users for name mapping`);
-        
-        // Create a map of user IDs to user info
-        const userMap = {};
-        users.forEach(user => {
-            // Ensure we have a valid user ID as the key
-            if (user && user._id) {
-                const userId = user._id.toString();
-                
-                // Process the profile image
-                let avatarUrl = null;
-                
-                // If profileImage is a base64 string
-                if (user.profileImage && typeof user.profileImage === 'string') {
-                    // If it's already a data URI or URL, use it as is
-                    if (user.profileImage.startsWith('data:') || user.profileImage.startsWith('http')) {
-                        avatarUrl = user.profileImage;
-                    } else {
-                        // It's a base64 string without prefix, add the prefix
-                        const imageType = user.profileImageType || 'image/jpeg';
-                        avatarUrl = `data:${imageType};base64,${user.profileImage}`;
-                    }
-                } else if (user.profileImage && Buffer.isBuffer(user.profileImage)) {
-                    // If it's a Buffer, convert to base64
-                    const imageType = user.profileImageType || 'image/jpeg';
-                    avatarUrl = `data:${imageType};base64,${user.profileImage.toString('base64')}`;
-                }
-                
-                // Use a default avatar if none is provided
-                if (!avatarUrl) {
-                    avatarUrl = 'https://randomuser.me/api/portraits/lego/1.jpg';
-                }
-                
-                userMap[userId] = {
-                    name: user.name || user.email || 'Unknown User',
-                    email: user.email || '',
-                    profileImage: avatarUrl
-                };
-                
-                console.log(`User ${userId} mapped to name: ${userMap[userId].name}, avatar: ${avatarUrl ? 'Valid avatar URL' : 'No avatar'}`);
-            }
-        });
-        
-        // For each lost item, find potential matches
-        for (const lostItem of userLostItems) {
-            console.log(`Processing lost item: ${lostItem._id}, description: ${lostItem.description}`);
-            
-            // Build query for matching found items
-            const query = {};
-            
-            // Description matching
-            if (lostItem.description) {
-                const keywords = lostItem.description.split(/\s+/).filter(word => word.length > 3);
-                if (keywords.length > 0) {
-                    const keywordPattern = keywords.join('|');
-                    query.description = { $regex: keywordPattern, $options: 'i' };
-                } else {
-                    query.description = { $regex: lostItem.description, $options: 'i' };
-                }
-            }
-            
-            // Category matching
-            if (lostItem.category) {
-                query.category = lostItem.category;
-            }
-            
-            // IMPORTANT: For testing, don't exclude items from the same user
-            // This will show all potential matches regardless of user ID
-            // query.userId = { $ne: userId }; // Only match items from other users
-            
-            console.log(`Searching for matches with query:`, JSON.stringify(query));
-            
-            const matchedItems = await FoundItem.find(query);
-            
-            console.log(`Found ${matchedItems.length} potential matches`);
-            
-            if (matchedItems.length > 0) {
-                // Calculate match score for each item
-                const scoredMatches = matchedItems.map(foundItem => {
-                    let score = 0;
-                    const maxScore = 100;
+
+        // Process lost items to find matching found items
+        if (lostItems.length > 0) {
+            for (const lostItem of lostItems) {
+                // Find potential matches - only look at items from other users in the same category
+                const potentialMatches = await FoundItem.find({
+                    category: lostItem.category,
+                    userId: { $ne: userId } // Don't match with own items
+                }).sort({ createdAt: -1 });
+
+                console.log(`Found ${potentialMatches.length} potential matches for lost item ${lostItem._id}`);
+
+                for (const foundItem of potentialMatches) {
+                    // Generate a consistent unique ID for this match pair
+                    // Using smaller ID first ensures the same ID regardless of order
+                    const smallerId = lostItem._id < foundItem._id ? lostItem._id : foundItem._id;
+                    const largerId = lostItem._id > foundItem._id ? lostItem._id : foundItem._id;
+                    const matchPairId = `${smallerId}_${largerId}`;
                     
-                    // Description similarity (50%)
-                    if (lostItem.description && foundItem.description) {
-                        const similarityScore = calculateTextSimilarity(lostItem.description, foundItem.description);
-                        score += similarityScore * 50;
-                        
-                        // Bonus points for very similar descriptions
-                        if (similarityScore > 0.5) {
-                            score += 10; // Bonus points for high similarity
+                    // Skip if we've already processed this match pair
+                    if (uniqueMatchIds.has(matchPairId)) {
+                        console.log(`Skipping duplicate match pair: ${matchPairId}`);
+                        continue;
+                    }
+
+                    // Calculate match score using the improved algorithm
+                    let matchDetails = { totalScore: 0, details: {} };
+                    let matchScore = 0;
+                    
+                    try {
+                        matchDetails = calculateMatchScore(lostItem, foundItem);
+                        matchScore = matchDetails.totalScore;
+                        console.log(`Match score between ${lostItem._id} and ${foundItem._id}: ${matchScore.toFixed(2)}`);
+                    } catch (error) {
+                        console.error(`Error calculating match score between ${lostItem._id} and ${foundItem._id}:`, error);
+                        // Fall back to basic matching
+                        if (lostItem.category === foundItem.category) {
+                            matchScore = 30; // Default match score for category match
                         }
                     }
                     
-                    // Location similarity (30%)
-                    if (lostItem.location && foundItem.location) {
-                        const locParts = lostItem.location.toLowerCase().split(/,|\s+/);
-                        const foundLocParts = foundItem.location.toLowerCase().split(/,|\s+/);
+                    // Only include good matches (above threshold)
+                    if (matchScore > 20) {
+                        // Get user details for the found item owner
+                        const foundByUser = await getUserDetails(foundItem.userId);
+                        const lostByUser = await getUserDetails(lostItem.userId);
                         
-                        const matchingParts = locParts.filter(part => 
-                            part.length > 2 && foundLocParts.includes(part)
-                        ).length;
+                        // Create the match object
+                        const match = {
+                            _id: matchPairId,
+                            lostItem: lostItem,
+                            foundItem: foundItem,
+                            lostItemUser: lostByUser,
+                            foundItemUser: foundByUser,
+                            matchScore: matchScore,
+                            matchDetails: matchDetails.details,
+                            createdAt: new Date()
+                        };
                         
-                        const matchPercentage = matchingParts / Math.max(locParts.length, 1);
-                        score += matchPercentage * 30;
+                        allMatches.push(match);
+                        uniqueMatchIds.add(matchPairId);
                     }
-                    
-                    // Category exact match (20%)
-                    if (lostItem.category && foundItem.category && 
-                        lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) {
-                        score += 20;
-                    }
-                    
-                    // Get user info from the map
-                    const foundByUserId = foundItem.userId ? foundItem.userId.toString() : 'unknown';
-                    const userInfo = userMap[foundByUserId] || {
-                        name: `User ${foundByUserId.substring(0, 5)}`,
-                        email: '',
-                        profileImage: 'https://randomuser.me/api/portraits/lego/1.jpg'
-                    };
-                    
-                    console.log(`Match found: Item ${foundItem._id} by user ${foundByUserId}, avatar: ${userInfo.profileImage}`);
-                    
-                    // Create match object with foundByUser info
-                    return {
-                        id: `${lostItem._id}-${foundItem._id}`,
-                        lostItemId: lostItem._id,
-                        foundItemId: foundItem._id,
-                        lostItemDescription: lostItem.description,
-                        foundItemDescription: foundItem.description,
-                        foundDate: foundItem.date,
-                        foundLocation: foundItem.location,
-                        matchConfidence: Math.min(Math.round(score), maxScore),
-                        status: 'pending', // Default status
-                        foundByUser: {
-                            id: foundByUserId,
-                            name: userInfo.name,
-                            email: userInfo.email,
-                            avatar: userInfo.profileImage
-                        }
-                    };
-                });
-                
-                // Lower the threshold for testing
-                const goodMatches = scoredMatches.filter(match => match.matchConfidence > 20);
-                
-                console.log(`Found ${goodMatches.length} good matches with score > 20`);
-                
-                // Add to all matches
-                allMatches = [...allMatches, ...goodMatches];
+                }
             }
         }
+
+        // Process found items to find matching lost items
+        // (This allows matches to appear for both the person who lost and the person who found)
+        if (foundItems.length > 0) {
+            for (const foundItem of foundItems) {
+                const potentialMatches = await LostItem.find({
+                    category: foundItem.category,
+                    userId: { $ne: userId } // Don't match with own items
+                }).sort({ createdAt: -1 });
+
+                console.log(`Found ${potentialMatches.length} potential matches for found item ${foundItem._id}`);
+
+                for (const lostItem of potentialMatches) {
+                    // Generate a consistent unique ID for this match pair
+                    const smallerId = lostItem._id < foundItem._id ? lostItem._id : foundItem._id;
+                    const largerId = lostItem._id > foundItem._id ? lostItem._id : foundItem._id;
+                    const matchPairId = `${smallerId}_${largerId}`;
+                    
+                    // Skip if we've already processed this match pair
+                    if (uniqueMatchIds.has(matchPairId)) {
+                        console.log(`Skipping duplicate match pair: ${matchPairId}`);
+                        continue;
+                    }
+
+                    // Calculate match score using the improved algorithm
+                    let matchDetails = { totalScore: 0, details: {} };
+                    let matchScore = 0;
+                    
+                    try {
+                        matchDetails = calculateMatchScore(lostItem, foundItem);
+                        matchScore = matchDetails.totalScore;
+                        console.log(`Match score between ${lostItem._id} and ${foundItem._id}: ${matchScore.toFixed(2)}`);
+                    } catch (error) {
+                        console.error(`Error calculating match score between ${lostItem._id} and ${foundItem._id}:`, error);
+                        // Fall back to basic matching
+                        if (lostItem.category === foundItem.category) {
+                            matchScore = 30; // Default match score for category match
+                        }
+                    }
+                    
+                    // Only include good matches (above threshold)
+                    if (matchScore > 20) {
+                        // Get user details
+                        const foundByUser = await getUserDetails(foundItem.userId);
+                        const lostByUser = await getUserDetails(lostItem.userId);
+                        
+                        // Create the match object
+                        const match = {
+                            _id: matchPairId,
+                            lostItem: lostItem,
+                            foundItem: foundItem,
+                            lostItemUser: lostByUser,
+                            foundItemUser: foundByUser,
+                            matchScore: matchScore,
+                            matchDetails: matchDetails.details,
+                            createdAt: new Date()
+                        };
+                        
+                        allMatches.push(match);
+                        uniqueMatchIds.add(matchPairId);
+                    }
+                }
+            }
+        }
+
+        // Sort matches by confidence score (highest first)
+        allMatches.sort((a, b) => b.matchScore - a.matchScore);
         
-        // Sort by match confidence (highest first)
-        allMatches.sort((a, b) => b.matchConfidence - a.matchConfidence);
-        
-        // Return matches
+        console.log(`Returning ${allMatches.length} unique matches for user ${userId}`);
         return res.json({
             status: 'success',
             matches: allMatches,
             totalMatches: allMatches.length
         });
-        
     } catch (error) {
-        console.error('Error fetching user matches:', error);
-        return res.status(500).json({
-            status: 'error',
-            message: 'Error fetching user matches',
-            details: error.message
+        console.error('Error in user-matches endpoint:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Internal server error', 
+            error: error.message 
         });
     }
 });
@@ -1651,28 +1668,274 @@ server.listen(PORT, '0.0.0.0', () => {
 // Helper function to normalize text for better matching
 function normalizeText(text) {
     if (!text) return '';
-    return text.toLowerCase()
-        .replace(/[^\w\s]/g, '') // Remove punctuation
-        .replace(/\s+/g, ' ')    // Replace multiple spaces with single space
-        .trim();
+    return text.toLowerCase().replace(/[^\w\s]/g, '');
 }
 
-// Helper function to calculate similarity between two texts
-function calculateTextSimilarity(text1, text2) {
-    const normalizedText1 = normalizeText(text1);
-    const normalizedText2 = normalizeText(text2);
-    
-    if (!normalizedText1 || !normalizedText2) return 0;
-    
-    // Split into words
-    const words1 = normalizedText1.split(/\s+/);
-    const words2 = normalizedText2.split(/\s+/);
-    
-    // Count matching words
-    const matchingWords = words1.filter(word => 
-        word.length > 2 && words2.includes(word)
-    ).length;
-    
-    // Calculate percentage
-    return matchingWords / Math.max(words1.length, 1);
+// Add function to check if two users have a match
+async function checkUsersHaveMatch(userId1, userId2) {
+    try {
+        // Find all lost items by user1
+        const user1LostItems = await LostItem.find({ userId: userId1 });
+        
+        // Find all found items by user2
+        const user2FoundItems = await FoundItem.find({ userId: userId2 });
+        
+        // Check for matches between user1's lost items and user2's found items
+        for (const lostItem of user1LostItems) {
+            for (const foundItem of user2FoundItems) {
+                // Check if items match based on category
+                if (lostItem.category === foundItem.category) {
+                    // Calculate match score
+                    let score = 0;
+                    
+                    // Category match (baseline 20%)
+                    score += 20;
+                    
+                    // Description similarity (50% weight)
+                    if (lostItem.description && foundItem.description) {
+                        const similarityScore = calculateTextSimilarity(lostItem.description, foundItem.description);
+                        score += similarityScore * 50;
+                    }
+                    
+                    // Location similarity (30% weight)
+                    if (lostItem.location && foundItem.location) {
+                        const locSimilarity = calculateTextSimilarity(lostItem.location, foundItem.location);
+                        score += locSimilarity * 30;
+                    }
+                    
+                    // Add category-specific attribute matching
+                    switch (lostItem.category) {
+                        case 'Electronics':
+                            // Brand match (up to 20%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Model match (up to 30%)
+                            if (lostItem.model && foundItem.model && 
+                                lostItem.model.toLowerCase() === foundItem.model.toLowerCase()) {
+                                score += 30;
+                            }
+                            
+                            // Color match (up to 15%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 15;
+                            }
+                            
+                            // Serial number is a strong indicator if available (up to 35%)
+                            if (lostItem.serialNumber && foundItem.serialNumber && 
+                                lostItem.serialNumber === foundItem.serialNumber) {
+                                score += 35;
+                            }
+                            break;
+                            
+                        case 'Accessories':
+                            // Brand match (up to 25%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Material match (up to 25%)
+                            if (lostItem.material && foundItem.material && 
+                                lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Color match (up to 25%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 25;
+                            }
+                            break;
+                            
+                        case 'Clothing':
+                            // Brand match (up to 20%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Size match (up to 25%)
+                            if (lostItem.size && foundItem.size && 
+                                lostItem.size.toLowerCase() === foundItem.size.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Color match (up to 25%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Material match (up to 15%)
+                            if (lostItem.material && foundItem.material && 
+                                lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                                score += 15;
+                            }
+                            break;
+                            
+                        case 'Documents':
+                            // Document type match (up to 30%)
+                            if (lostItem.documentType && foundItem.documentType && 
+                                lostItem.documentType.toLowerCase() === foundItem.documentType.toLowerCase()) {
+                                score += 30;
+                            }
+                            
+                            // Issuing authority match (up to 20%)
+                            if (lostItem.issuingAuthority && foundItem.issuingAuthority && 
+                                lostItem.issuingAuthority.toLowerCase() === foundItem.issuingAuthority.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Name on document match (up to 50% - very strong indicator)
+                            if (lostItem.nameOnDocument && foundItem.nameOnDocument && 
+                                lostItem.nameOnDocument.toLowerCase() === foundItem.nameOnDocument.toLowerCase()) {
+                                score += 50;
+                            }
+                            break;
+                    }
+                    
+                    // If match score is above threshold, consider it a match
+                    if (score > 20) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Check the reverse case - user2's lost items matched with user1's found items
+        const user2LostItems = await LostItem.find({ userId: userId2 });
+        const user1FoundItems = await FoundItem.find({ userId: userId1 });
+        
+        for (const lostItem of user2LostItems) {
+            for (const foundItem of user1FoundItems) {
+                if (lostItem.category === foundItem.category) {
+                    let score = 0;
+                    
+                    // Category match (baseline 20%)
+                    score += 20;
+                    
+                    // Description similarity (50% weight)
+                    if (lostItem.description && foundItem.description) {
+                        const similarityScore = calculateTextSimilarity(lostItem.description, foundItem.description);
+                        score += similarityScore * 50;
+                    }
+                    
+                    // Location similarity (30% weight)
+                    if (lostItem.location && foundItem.location) {
+                        const locSimilarity = calculateTextSimilarity(lostItem.location, foundItem.location);
+                        score += locSimilarity * 30;
+                    }
+                    
+                    // Add category-specific attribute matching
+                    switch (lostItem.category) {
+                        case 'Electronics':
+                            // Brand match (up to 20%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Model match (up to 30%)
+                            if (lostItem.model && foundItem.model && 
+                                lostItem.model.toLowerCase() === foundItem.model.toLowerCase()) {
+                                score += 30;
+                            }
+                            
+                            // Color match (up to 15%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 15;
+                            }
+                            
+                            // Serial number is a strong indicator if available (up to 35%)
+                            if (lostItem.serialNumber && foundItem.serialNumber && 
+                                lostItem.serialNumber === foundItem.serialNumber) {
+                                score += 35;
+                            }
+                            break;
+                            
+                        case 'Accessories':
+                            // Brand match (up to 25%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Material match (up to 25%)
+                            if (lostItem.material && foundItem.material && 
+                                lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Color match (up to 25%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 25;
+                            }
+                            break;
+                            
+                        case 'Clothing':
+                            // Brand match (up to 20%)
+                            if (lostItem.brand && foundItem.brand && 
+                                lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Size match (up to 25%)
+                            if (lostItem.size && foundItem.size && 
+                                lostItem.size.toLowerCase() === foundItem.size.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Color match (up to 25%)
+                            if (lostItem.color && foundItem.color && 
+                                lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
+                                score += 25;
+                            }
+                            
+                            // Material match (up to 15%)
+                            if (lostItem.material && foundItem.material && 
+                                lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
+                                score += 15;
+                            }
+                            break;
+                            
+                        case 'Documents':
+                            // Document type match (up to 30%)
+                            if (lostItem.documentType && foundItem.documentType && 
+                                lostItem.documentType.toLowerCase() === foundItem.documentType.toLowerCase()) {
+                                score += 30;
+                            }
+                            
+                            // Issuing authority match (up to 20%)
+                            if (lostItem.issuingAuthority && foundItem.issuingAuthority && 
+                                lostItem.issuingAuthority.toLowerCase() === foundItem.issuingAuthority.toLowerCase()) {
+                                score += 20;
+                            }
+                            
+                            // Name on document match (up to 50% - very strong indicator)
+                            if (lostItem.nameOnDocument && foundItem.nameOnDocument && 
+                                lostItem.nameOnDocument.toLowerCase() === foundItem.nameOnDocument.toLowerCase()) {
+                                score += 50;
+                            }
+                            break;
+                    }
+                    
+                    // If match score is above threshold, consider it a match
+                    if (score > 20) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error checking matches between users:', error);
+        return false; // Default to false if there's an error checking
+    }
 }

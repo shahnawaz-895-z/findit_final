@@ -426,7 +426,8 @@ const ChatScreen = ({ route, navigation }) => {
             receiverId: recipient._id,
             senderId: currentUserId,
             text: newMessages[0].text,
-            messageId: messageId // Send the client-generated ID to avoid duplicates
+            messageId: messageId, // Send the client-generated ID to avoid duplicates
+            matchId: matchId || null // Include the match ID if available
         })
         .then(response => {
             console.log('Message saved via API:', response.data);
@@ -458,11 +459,28 @@ const ChatScreen = ({ route, navigation }) => {
                         receiverId: recipient._id,
                         senderId: currentUserId,
                         text: newMessages[0].text,
-                        messageId: messageId // Send the client-generated ID to avoid duplicates
+                        messageId: messageId, // Send the client-generated ID to avoid duplicates
+                        matchId: matchId || null // Include the match ID if available
                     });
                 } catch (socketError) {
                     console.error('Socket.IO fallback also failed:', socketError);
                 }
+            }
+            
+            // If the error is because no match exists, show a specific message
+            if (error.response && error.response.data && error.response.data.message === 'Cannot send messages - no match exists between these users') {
+                Alert.alert(
+                    'Cannot Send Message',
+                    'You can only message users with whom you have a match.',
+                    [{ text: 'OK' }]
+                );
+                
+                // Remove the failed message
+                setMessages(previousMessages => 
+                    previousMessages.filter(msg => msg._id !== messageId)
+                );
+                
+                return;
             }
             
             // Mark the message as failed
@@ -491,7 +509,7 @@ const ChatScreen = ({ route, navigation }) => {
         });
         
         console.log('Message sending process initiated');
-    }, [socket, recipient._id, currentUserId, serverUrl]);
+    }, [socket, recipient._id, currentUserId, serverUrl, matchId]);
 
     if (loading && messages.length === 0) {
         return (
