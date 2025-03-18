@@ -12,7 +12,6 @@ import ReportLostItem from './screens/ReportLostItem';
 import ShowFoundItemData from './screens/Showfounditemdata';
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
-import SearchScreen from './screens/SearchScreen.js';
 import ChatListScreen from './screens/ChatListScreen.js';
 import MatchesScreen from './screens/MatchesScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
@@ -69,7 +68,6 @@ export default function App() {
             options={{ headerShown: true, animationEnabled: true, gestureEnabled: true }} 
           />
           <Stack.Screen name="ChatScreen" component={ChatScreen} />
-          <Stack.Screen name="SearchScreen" component={SearchScreen} />
           <Stack.Screen name="ChatListScreen" component={ChatListScreen} />
           <Stack.Screen name="MatchesScreen" component={MatchesScreen} />
           <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />

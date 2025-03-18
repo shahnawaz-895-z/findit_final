@@ -27,6 +27,15 @@ const ReportLostItem = () => {
   const [photo, setPhoto] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [itemName, setItemName] = useState('');
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [color, setColor] = useState('');
+  const [size, setSize] = useState('');
+  const [material, setMaterial] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [documentType, setDocumentType] = useState('');
+  const [issuingAuthority, setIssuingAuthority] = useState('');
+  const [nameOnDocument, setNameOnDocument] = useState('');
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -309,6 +318,31 @@ const ReportLostItem = () => {
       formData.append('date', date.toISOString());
       formData.append('itemName', itemName);
       
+      // Add category-specific attributes
+      if (category === 'Electronics') {
+        if (brand) formData.append('brand', brand);
+        if (model) formData.append('model', model);
+        if (color) formData.append('color', color);
+        if (serialNumber) formData.append('serialNumber', serialNumber);
+      } else if (category === 'Accessories') {
+        if (brand) formData.append('brand', brand);
+        if (material) formData.append('material', material);
+        if (color) formData.append('color', color);
+      } else if (category === 'Clothing') {
+        if (brand) formData.append('brand', brand);
+        if (size) formData.append('size', size);
+        if (color) formData.append('color', color);
+        if (material) formData.append('material', material);
+      } else if (category === 'Documents') {
+        if (documentType) formData.append('documentType', documentType);
+        if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
+        if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
+      } else {
+        // Others category - add any general attributes
+        if (color) formData.append('color', color);
+        if (brand) formData.append('brand', brand);
+      }
+      
       // Add user ID if available
       if (userId) {
         formData.append('userId', userId);
@@ -383,6 +417,15 @@ const ReportLostItem = () => {
                 setDate(new Date());
                 setCategory('');
                 setItemName('');
+                setBrand('');
+                setModel('');
+                setColor('');
+                setSize('');
+                setMaterial('');
+                setSerialNumber('');
+                setDocumentType('');
+                setIssuingAuthority('');
+                setNameOnDocument('');
                 // Navigate back to home
                 navigation.navigate('HomePage');
               },
@@ -393,8 +436,8 @@ const ReportLostItem = () => {
         Alert.alert('Error', 'Failed to report lost item. Please try again.');
       }
     } catch (error) {
-      console.error('Error submitting form:', error);
-      Alert.alert('Error', 'Failed to report lost item. Please try again.');
+      console.error('Error submitting lost item:', error);
+      Alert.alert('Error', 'Failed to submit lost item report. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -541,6 +584,228 @@ const ReportLostItem = () => {
     return words.slice(0, 4).join(' ').charAt(0).toUpperCase() + words.slice(0, 4).join(' ').slice(1);
   };
 
+  // Function to reset all category-specific fields
+  const resetCategoryFields = () => {
+    setBrand('');
+    setModel('');
+    setColor('');
+    setSerialNumber('');
+    setMaterial('');
+    setSize('');
+    setDocumentType('');
+    setIssuingAuthority('');
+    setNameOnDocument('');
+  };
+
+  // Handler for category change
+  const handleCategoryChange = (selectedCategory) => {
+    setCategory(selectedCategory);
+    resetCategoryFields();
+  };
+
+  // Render category-specific attribute fields
+  const renderCategoryFields = () => {
+    switch (category) {
+      case 'Electronics':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Electronics Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Apple, Samsung, Dell"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Model</Text>
+              <TextInput
+                style={styles.input}
+                value={model}
+                onChangeText={setModel}
+                placeholder="e.g., iPhone 14 Pro, MacBook Air M2"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Silver, Black, Blue"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Serial Number (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={serialNumber}
+                onChangeText={setSerialNumber}
+                placeholder="Enter if available for verification"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Accessories':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Accessories Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Gucci, Fossil, Herschel"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Material</Text>
+              <TextInput
+                style={styles.input}
+                value={material}
+                onChangeText={setMaterial}
+                placeholder="e.g., Leather, Metal, Fabric"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Brown, Black, Tan"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Clothing':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Clothing Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="e.g., Nike, Adidas, Zara"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Size</Text>
+              <TextInput
+                style={styles.input}
+                value={size}
+                onChangeText={setSize}
+                placeholder="e.g., S, M, L, XL, 42, 10"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="e.g., Blue, Red, Black"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Material</Text>
+              <TextInput
+                style={styles.input}
+                value={material}
+                onChangeText={setMaterial}
+                placeholder="e.g., Cotton, Polyester, Denim"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Documents':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Document Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Document Type</Text>
+              <TextInput
+                style={styles.input}
+                value={documentType}
+                onChangeText={setDocumentType}
+                placeholder="e.g., Passport, Driver's License, Student ID"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Issuing Authority</Text>
+              <TextInput
+                style={styles.input}
+                value={issuingAuthority}
+                onChangeText={setIssuingAuthority}
+                placeholder="e.g., Government, University, Company"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Name on Document (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={nameOnDocument}
+                onChangeText={setNameOnDocument}
+                placeholder="Enter if willing to share for verification"
+              />
+            </View>
+          </View>
+        );
+        
+      case 'Others':
+        return (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Item Details</Text>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Brand (if applicable)</Text>
+              <TextInput
+                style={styles.input}
+                value={brand}
+                onChangeText={setBrand}
+                placeholder="Enter if relevant"
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Color</Text>
+              <TextInput
+                style={styles.input}
+                value={color}
+                onChangeText={setColor}
+                placeholder="Enter the color of the item"
+              />
+            </View>
+          </View>
+        );
+        
+      default:
+        return null;
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -617,18 +882,26 @@ const ReportLostItem = () => {
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Category:</Text>
-          <View style={styles.pickerContainer}>
-            <Ionicons name="list-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
-            <Picker
-              selectedValue={category}
-              onValueChange={(itemValue) => setCategory(itemValue)}
-              style={styles.picker}
-            >
-              <Picker.Item label="Select Category" value="" />
-              {categories.map((item, index) => (
-                <Picker.Item key={index} label={item} value={item} />
-              ))}
-            </Picker>
+          <View style={styles.categoryContainer}>
+            {['Electronics', 'Accessories', 'Clothing', 'Documents', 'Others'].map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[
+                  styles.categoryButton,
+                  category === item && styles.categoryButtonActive,
+                ]}
+                onPress={() => handleCategoryChange(item)}
+              >
+                <Text
+                  style={[
+                    styles.categoryButtonText,
+                    category === item && styles.categoryButtonTextActive,
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -780,6 +1053,9 @@ const ReportLostItem = () => {
             </View>
           )}
         </View>
+
+        {/* Render category-specific fields */}
+        {category && renderCategoryFields()}
       </View>
 
       <TouchableOpacity 
@@ -1095,6 +1371,46 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 5,
     zIndex: 10,
+  },
+  section: {
+    marginBottom: 20,
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#3d0c45',
+    marginBottom: 15,
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 10,
+  },
+  categoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    marginBottom: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  categoryButtonActive: {
+    backgroundColor: '#3d0c45',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  categoryButtonTextActive: {
+    color: '#fff',
   },
 });
 
