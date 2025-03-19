@@ -207,7 +207,7 @@ const ChatListScreen = ({ navigation }) => {
                 ) : (
                     <View style={styles.placeholderAvatar}>
                         <Text style={styles.avatarText}>
-                            {item.name.charAt(0).toUpperCase()}
+                            {item.name ? item.name.charAt(0).toUpperCase() : '?'}
                         </Text>
                     </View>
                 )}

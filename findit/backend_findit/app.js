@@ -1393,42 +1393,24 @@ app.get('/notifications/:userId', async (req, res) => {
 });
 
 // **Mark notification as read**
-app.put('/notifications/:notificationId/read', async (req, res) => {
+app.put('/api/notifications/:notificationId/read', async (req, res) => {
     try {
         const { notificationId } = req.params;
         
-        if (!notificationId) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Notification ID is required'
-            });
-        }
-        
         const notification = await Notification.findByIdAndUpdate(
             notificationId,
-            { $set: { read: true } },
+            { read: true },
             { new: true }
         );
-        
+
         if (!notification) {
-            return res.status(404).json({
-                status: 'error',
-                message: 'Notification not found'
-            });
+            return res.status(404).json({ error: 'Notification not found' });
         }
-        
-        res.status(200).json({
-            status: 'success',
-            notification
-        });
-        
+
+        res.json(notification);
     } catch (error) {
         console.error('Error marking notification as read:', error);
-        res.status(500).json({
-            status: 'error',
-            message: 'Error marking notification as read',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to update notification' });
     }
 });
 
@@ -1783,6 +1765,151 @@ app.get('/user-matches/:userId', async (req, res) => {
     }
 });
 
+// Notification polling endpoint
+app.get('/api/notifications/poll/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { lastPolled } = req.query;
+        
+        const query = {
+            userId,
+            createdAt: { $gt: new Date(parseInt(lastPolled) || 0) }
+        };
+        
+        const notifications = await Notification.find(query)
+            .sort({ createdAt: -1 })
+            .limit(50);
+            
+        res.json({
+            success: true,
+            notifications,
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        console.error('Error polling notifications:', error);
+        res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+});
+
+app.get('/api/notifications/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+
+        const skip = (page - 1) * limit;
+
+        const notifications = await Notification.find({ userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Notification.countDocuments({ userId });
+
+        res.json({
+            success: true,
+            notifications,
+            total,
+            hasMore: skip + notifications.length < total
+        });
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch notifications' 
+        });
+    }
+});
+
+app.put('/api/notifications/:notificationId/read', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        
+        const notification = await Notification.findByIdAndUpdate(
+            notificationId,
+            { read: true },
+            { new: true }
+        );
+
+        if (!notification) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Notification not found' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            notification 
+        });
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to update notification' 
+        });
+    }
+});
+
+app.put('/api/notifications/:userId/read-all', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const result = await Notification.updateMany(
+            { userId, read: false },
+            { read: true }
+        );
+
+        res.json({ 
+            success: true,
+            modifiedCount: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to update notifications' 
+        });
+    }
+});
+
+app.get('/api/notifications/:userId/unread-count', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const count = await Notification.countDocuments({
+            userId,
+            read: false
+        });
+
+        res.json({ count });
+    } catch (error) {
+        console.error('Error getting unread count:', error);
+        res.status(500).json({ error: 'Failed to get unread count' });
+    }
+});
+
+// Create notification
+async function createNotification(userId, type, title, message, data = {}) {
+    try {
+        // Create notification in database
+        const notification = new Notification({
+            userId,
+            type,
+            title,
+            message,
+            ...data,
+            read: false,
+            createdAt: new Date()
+        });
+        
+        await notification.save();
+        return notification;
+    } catch (error) {
+        console.error('Error creating notification:', error);
+        throw error;
+    }
+}
+
 // **Start Server**
 const PORT = process.env.PORT || 5000;
 
@@ -2080,315 +2207,36 @@ async function checkUsersHaveMatch(userId1, userId2) {
     }
 }
 
-// Helper function to extract key features based on category
-function extractFeatures(text, category) {
-    const features = {};
-    
-    // Extract common features across all categories
-    
-    // Color extraction
-    const colorPattern = /(?:^|\s)(black|white|blue|red|green|yellow|purple|pink|brown|gray|grey|silver|gold|orange)(?:\s|$)/i;
-    const colorMatch = text.match(colorPattern);
-    if (colorMatch) {
-        features.color = colorMatch[1].toLowerCase();
-    }
-    
-    // Brand extraction using common brand patterns
-    const brandPatterns = [
-        /(?:^|\s)(apple|samsung|google|sony|lg|hp|dell|lenovo|acer|asus|nike|adidas|gucci|prada|zara|h&m|levis|canon|nikon)(?:\s|$)/i,
-        /(?:^|\s)brand(?:\s+is|\s*:)?\s+([a-z0-9]+)/i,
-        /([a-z0-9]+)\s+brand/i
-    ];
-    
-    for (const pattern of brandPatterns) {
-        const brandMatch = text.match(pattern);
-        if (brandMatch && brandMatch[1]) {
-            features.brand = brandMatch[1].toLowerCase();
-            break;
+// Test endpoint to create a notification
+app.post('/api/test/notification', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'userId is required' 
+            });
         }
-    }
-    
-    // Category-specific feature extraction
-    switch(category) {
-        case 'Electronics':
-            // Extract model numbers (patterns like "iPhone 13" or "Galaxy S22")
-            const modelPatterns = [
-                /(?:^|\s)(iphone\s*\d+(?:\s*pro)?(?:\s*max)?)/i,
-                /(?:^|\s)(galaxy\s*[a-z]\d+(?:\s*ultra)?)/i,
-                /(?:^|\s)(macbook\s*(?:pro|air)?\s*\d+)/i,
-                /(?:^|\s)(model(?:\s+is|\s*:)?\s+([a-z0-9]+))/i
-            ];
-            
-            for (const pattern of modelPatterns) {
-                const modelMatch = text.match(pattern);
-                if (modelMatch && modelMatch[1]) {
-                    features.model = modelMatch[1].toLowerCase();
-                    break;
-                }
-            }
-            break;
-            
-        case 'Clothing':
-            // Extract size
-            const sizePattern = /(?:^|\s)((?:x{1,3}l|x{1,3}s|[sml]|small|medium|large|size\s+\d+))/i;
-            const sizeMatch = text.match(sizePattern);
-            if (sizeMatch) {
-                features.size = sizeMatch[1].toLowerCase();
-            }
-            
-            // Extract material
-            const materialPattern = /(?:^|\s)(leather|cotton|wool|polyester|nylon|denim|silk|linen)/i;
-            const materialMatch = text.match(materialPattern);
-            if (materialMatch) {
-                features.material = materialMatch[1].toLowerCase();
-            }
-            break;
-            
-        case 'Accessories':
-            // Extract material
-            const accMaterialPattern = /(?:^|\s)(leather|metal|plastic|gold|silver|canvas)/i;
-            const accMaterialMatch = text.match(accMaterialPattern);
-            if (accMaterialMatch) {
-                features.material = accMaterialMatch[1].toLowerCase();
-            }
-            break;
-            
-        case 'Documents':
-            // Extract document type
-            const docTypePattern = /(?:^|\s)(passport|license|id\s*card|credit\s*card|certificate)/i;
-            const docTypeMatch = text.match(docTypePattern);
-            if (docTypeMatch) {
-                features.documentType = docTypeMatch[1].toLowerCase();
-            }
-            break;
-    }
-    
-    return features;
-}
 
-// Helper function to calculate string similarity
-function calculateStringSimilarity(str1, str2) {
-    if (!str1 || !str2) return 0;
-    
-    // Levenshtein distance calculation
-    const m = str1.length;
-    const n = str2.length;
-    
-    // Handle empty strings
-    if (m === 0) return 0;
-    if (n === 0) return 0;
-    
-    // Create distance matrix
-    const matrix = Array(m + 1).fill().map(() => Array(n + 1).fill(0));
-    
-    // Initialize first row and column
-    for (let i = 0; i <= m; i++) matrix[i][0] = i;
-    for (let j = 0; j <= n; j++) matrix[0][j] = j;
-    
-    // Fill the matrix
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            const cost = str1.charAt(i - 1) === str2.charAt(j - 1) ? 0 : 1;
-            matrix[i][j] = Math.min(
-                matrix[i - 1][j] + 1,      // deletion
-                matrix[i][j - 1] + 1,      // insertion
-                matrix[i - 1][j - 1] + cost // substitution
-            );
-        }
-    }
-    
-    // Calculate similarity score (0-1)
-    const maxLen = Math.max(m, n);
-    return maxLen > 0 ? 1 - (matrix[m][n] / maxLen) : 1;
-}
+        // Create a test notification
+        const notification = await createNotification(
+            userId,
+            'system',
+            'Test Notification',
+            'This is a test notification to verify the system works.',
+            { testData: 'some test data' }
+        );
 
-// Helper functions for category-specific attribute matching
-
-function compareElectronicsAttributes(lostItem, foundItem) {
-    let score = 0;
-    const totalWeight = 20;
-    let attributeCount = 0;
-    
-    // Compare brand (7 points)
-    if (lostItem.brand && foundItem.brand) {
-        attributeCount++;
-        if (lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
-            score += 7;
-        }
+        res.json({ 
+            success: true, 
+            notification 
+        });
+    } catch (error) {
+        console.error('Error creating test notification:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to create test notification' 
+        });
     }
-    
-    // Compare model (7 points)
-    if (lostItem.model && foundItem.model) {
-        attributeCount++;
-        if (lostItem.model.toLowerCase() === foundItem.model.toLowerCase()) {
-            score += 7;
-        }
-    }
-    
-    // Compare color (6 points)
-    if (lostItem.color && foundItem.color) {
-        attributeCount++;
-        if (lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
-            score += 6;
-        }
-    }
-    
-    return attributeCount > 0 ? (score / attributeCount) * (totalWeight / 20) : 0;
-}
-
-function compareAccessoriesAttributes(lostItem, foundItem) {
-    let score = 0;
-    const totalWeight = 20;
-    let attributeCount = 0;
-    
-    // Compare brand (7 points)
-    if (lostItem.brand && foundItem.brand) {
-        attributeCount++;
-        if (lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
-            score += 7;
-        }
-    }
-    
-    // Compare material (7 points)
-    if (lostItem.material && foundItem.material) {
-        attributeCount++;
-        if (lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
-            score += 7;
-        }
-    }
-    
-    // Compare color (6 points)
-    if (lostItem.color && foundItem.color) {
-        attributeCount++;
-        if (lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
-            score += 6;
-        }
-    }
-    
-    return attributeCount > 0 ? (score / attributeCount) * (totalWeight / 20) : 0;
-}
-
-function compareClothingAttributes(lostItem, foundItem) {
-    let score = 0;
-    const totalWeight = 20;
-    let attributeCount = 0;
-    
-    // Compare brand (5 points)
-    if (lostItem.brand && foundItem.brand) {
-        attributeCount++;
-        if (lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
-            score += 5;
-        }
-    }
-    
-    // Compare size (5 points)
-    if (lostItem.size && foundItem.size) {
-        attributeCount++;
-        if (lostItem.size.toLowerCase() === foundItem.size.toLowerCase()) {
-            score += 5;
-        }
-    }
-    
-    // Compare color (5 points)
-    if (lostItem.color && foundItem.color) {
-        attributeCount++;
-        if (lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
-            score += 5;
-        }
-    }
-    
-    // Compare material (5 points)
-    if (lostItem.material && foundItem.material) {
-        attributeCount++;
-        if (lostItem.material.toLowerCase() === foundItem.material.toLowerCase()) {
-            score += 5;
-        }
-    }
-    
-    return attributeCount > 0 ? (score / attributeCount) * (totalWeight / 20) : 0;
-}
-
-function compareDocumentAttributes(lostItem, foundItem) {
-    let score = 0;
-    const totalWeight = 20;
-    let attributeCount = 0;
-    
-    // Compare document type (10 points)
-    if (lostItem.documentType && foundItem.documentType) {
-        attributeCount++;
-        if (lostItem.documentType.toLowerCase() === foundItem.documentType.toLowerCase()) {
-            score += 10;
-        }
-    }
-    
-    // Compare issuing authority (10 points)
-    if (lostItem.issuingAuthority && foundItem.issuingAuthority) {
-        attributeCount++;
-        if (lostItem.issuingAuthority.toLowerCase() === foundItem.issuingAuthority.toLowerCase()) {
-            score += 10;
-        }
-    }
-    
-    return attributeCount > 0 ? (score / attributeCount) * (totalWeight / 20) : 0;
-}
-
-function compareGeneralAttributes(lostItem, foundItem) {
-    let score = 0;
-    const totalWeight = 20;
-    let attributeCount = 0;
-    
-    // Compare color (10 points)
-    if (lostItem.color && foundItem.color) {
-        attributeCount++;
-        if (lostItem.color.toLowerCase() === foundItem.color.toLowerCase()) {
-            score += 10;
-        }
-    }
-    
-    // Compare brand (10 points)
-    if (lostItem.brand && foundItem.brand) {
-        attributeCount++;
-        if (lostItem.brand.toLowerCase() === foundItem.brand.toLowerCase()) {
-            score += 10;
-        }
-    }
-    
-    return attributeCount > 0 ? (score / attributeCount) * (totalWeight / 20) : 0;
-}
-
-// Helper function to get matched features for display
-function getMatchedFeatures(foundFeatures, lostFeatures) {
-    const matchedFeatures = [];
-    
-    for (const feature in foundFeatures) {
-        if (lostFeatures[feature]) {
-            // Direct match
-            if (foundFeatures[feature] === lostFeatures[feature]) {
-                matchedFeatures.push({
-                    name: feature,
-                    value: foundFeatures[feature],
-                    matchType: 'exact'
-                });
-            } 
-            // Similar match
-            else if (typeof foundFeatures[feature] === 'string' && 
-                     typeof lostFeatures[feature] === 'string') {
-                const similarity = calculateStringSimilarity(
-                    foundFeatures[feature],
-                    lostFeatures[feature]
-                );
-                if (similarity > 0.7) {
-                    matchedFeatures.push({
-                        name: feature,
-                        value: foundFeatures[feature],
-                        similarValue: lostFeatures[feature],
-                        similarity: (similarity * 100).toFixed(0),
-                        matchType: 'similar'
-                    });
-                }
-            }
-        }
-    }
-    
-    return matchedFeatures;
-}
+});
