@@ -558,6 +558,14 @@ const MatchesScreen = ({ route, navigation }) => {
                             </Text>
                         </View>
                     </View>
+                    
+                    {/* Add unique point verification indicator if there's a unique point */}
+                    {item.uniquePoint && (
+                        <View style={styles.verificationBadge}>
+                            <Ionicons name="shield-checkmark" size={20} color="#fff" />
+                            <Text style={styles.verificationText}>Verification required</Text>
+                        </View>
+                    )}
                 </TouchableOpacity>
             );
         }
@@ -1115,6 +1123,21 @@ const styles = StyleSheet.create({
         color: '#1b5e20',
         marginBottom: 3,
         paddingLeft: 5,
+    },
+    verificationBadge: {
+        backgroundColor: '#ffc107',
+        padding: 8,
+        borderRadius: 12,
+        marginTop: 8,
+        marginLeft: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    verificationText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#fff',
+        marginLeft: 8,
     },
 });
 

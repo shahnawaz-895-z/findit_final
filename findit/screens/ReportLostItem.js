@@ -36,6 +36,7 @@ const ReportLostItem = () => {
   const [documentType, setDocumentType] = useState('');
   const [issuingAuthority, setIssuingAuthority] = useState('');
   const [nameOnDocument, setNameOnDocument] = useState('');
+  const [uniquePoint, setUniquePoint] = useState('');
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -295,6 +296,10 @@ const ReportLostItem = () => {
       Alert.alert('Error', 'Please provide an item name.');
       return;
     }
+    if (!uniquePoint) {
+      Alert.alert('Error', 'Please provide a unique point for verification.');
+      return;
+    }
 
     setIsLoading(true);
 
@@ -317,13 +322,13 @@ const ReportLostItem = () => {
       formData.append('time', time.toISOString());
       formData.append('date', date.toISOString());
       formData.append('itemName', itemName);
+      formData.append('uniquePoint', uniquePoint);
       
       // Add category-specific attributes
       if (category === 'Electronics') {
         if (brand) formData.append('brand', brand);
         if (model) formData.append('model', model);
         if (color) formData.append('color', color);
-        if (serialNumber) formData.append('serialNumber', serialNumber);
       } else if (category === 'Accessories') {
         if (brand) formData.append('brand', brand);
         if (material) formData.append('material', material);
@@ -426,6 +431,7 @@ const ReportLostItem = () => {
                 setDocumentType('');
                 setIssuingAuthority('');
                 setNameOnDocument('');
+                setUniquePoint('');
                 // Navigate back to home
                 navigation.navigate('HomePage');
               },
@@ -595,6 +601,7 @@ const ReportLostItem = () => {
     setDocumentType('');
     setIssuingAuthority('');
     setNameOnDocument('');
+    setUniquePoint('');
   };
 
   // Handler for category change
@@ -642,12 +649,12 @@ const ReportLostItem = () => {
             </View>
             
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Serial Number (Optional)</Text>
+              <Text style={styles.label}>Unique Point (Required)</Text>
               <TextInput
                 style={styles.input}
-                value={serialNumber}
-                onChangeText={setSerialNumber}
-                placeholder="Enter if available for verification"
+                value={uniquePoint}
+                onChangeText={setUniquePoint}
+                placeholder="Enter a unique detail only you would know"
               />
             </View>
           </View>

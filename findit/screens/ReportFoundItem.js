@@ -45,7 +45,10 @@ const ReportFoundItem = () => {
 
   const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
   const HUGGING_FACE_API_KEY = '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';
+<<<<<<< HEAD
 
+=======
+>>>>>>> 2667e39b0ddcda8361b553bb8deac86406436472
   useEffect(() => {
     const getLocationPermission = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -483,38 +486,106 @@ const ReportFoundItem = () => {
       });
 
       if (response.data.status === 'success') {
-        // Show success message
-        Alert.alert(
-          'Success!',
-          'Your found item has been reported successfully. Thank you for helping someone find their lost item!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Reset form
-                setContact('');
-                setLocation('');
-                setPhoto(null);
-                setDescription('');
-                setTime(new Date());
-                setDate(new Date());
-                setCategory('');
-                setItemName('');
-                setBrand('');
-                setModel('');
-                setColor('');
-                setSize('');
-                setMaterial('');
-                setSerialNumber('');
-                setDocumentType('');
-                setIssuingAuthority('');
-                setNameOnDocument('');
-                // Navigate back to home
-                navigation.navigate('HomePage');
+        // Check if there are potential matches
+        const matches = response.data.matches || [];
+        
+        if (matches.length > 0) {
+          // Show success message with matches information
+          Alert.alert(
+            'Success!',
+            `Your found item has been reported successfully. We found ${matches.length} potential matches!`,
+            [
+              {
+                text: 'View Matches',
+                onPress: () => {
+                  // Reset form
+                  setContact('');
+                  setLocation('');
+                  setPhoto(null);
+                  setDescription('');
+                  setTime(new Date());
+                  setDate(new Date());
+                  setCategory('');
+                  setItemName('');
+                  setBrand('');
+                  setModel('');
+                  setColor('');
+                  setSize('');
+                  setMaterial('');
+                  setSerialNumber('');
+                  setDocumentType('');
+                  setIssuingAuthority('');
+                  setNameOnDocument('');
+                  
+                  // Navigate to matches screen with the matches data
+                  navigation.navigate('MatchesScreen', {
+                    matches: matches,
+                    foundItemId: response.data.itemId,
+                    foundItemDescription: description
+                  });
+                },
               },
-            },
-          ]
-        );
+              {
+                text: 'Later',
+                onPress: () => {
+                  // Reset form
+                  setContact('');
+                  setLocation('');
+                  setPhoto(null);
+                  setDescription('');
+                  setTime(new Date());
+                  setDate(new Date());
+                  setCategory('');
+                  setItemName('');
+                  setBrand('');
+                  setModel('');
+                  setColor('');
+                  setSize('');
+                  setMaterial('');
+                  setSerialNumber('');
+                  setDocumentType('');
+                  setIssuingAuthority('');
+                  setNameOnDocument('');
+                  // Navigate back to home
+                  navigation.navigate('HomePage');
+                },
+              },
+            ]
+          );
+        } else {
+          // Show standard success message
+          Alert.alert(
+            'Success!',
+            'Your found item has been reported successfully. Thank you for helping someone find their lost item!',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  // Reset form
+                  setContact('');
+                  setLocation('');
+                  setPhoto(null);
+                  setDescription('');
+                  setTime(new Date());
+                  setDate(new Date());
+                  setCategory('');
+                  setItemName('');
+                  setBrand('');
+                  setModel('');
+                  setColor('');
+                  setSize('');
+                  setMaterial('');
+                  setSerialNumber('');
+                  setDocumentType('');
+                  setIssuingAuthority('');
+                  setNameOnDocument('');
+                  // Navigate back to home
+                  navigation.navigate('HomePage');
+                },
+              },
+            ]
+          );
+        }
       } else {
         Alert.alert('Error', 'Failed to report found item. Please try again.');
       }
