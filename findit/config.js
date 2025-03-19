@@ -4,8 +4,8 @@
 
 const API_CONFIG = {
   // Server IP address and port
-  IP_ADDRESS: '192.168.18.18',
-  PORT: '5000',
+  IP_ADDRESS: '192.168.100.10',
+  PORT: '5003',
   
   // Full URLs for different endpoints
   get BASE_URL() {

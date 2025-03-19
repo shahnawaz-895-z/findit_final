@@ -9,7 +9,9 @@ import {
     ActivityIndicator,
     Alert,
     Dimensions,
-    SafeAreaView
+    SafeAreaView,
+    Modal,
+    TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -30,6 +32,10 @@ const MatchDetailsScreen = ({ route, navigation }) => {
     const [matchScore, setMatchScore] = useState(match ? match.matchConfidence : 0);
     const [userId, setUserId] = useState(null);
     const [matchStatus, setMatchStatus] = useState(match ? match.status : 'pending');
+    const [uniquePointVerified, setUniquePointVerified] = useState(false);
+    const [uniquePointInput, setUniquePointInput] = useState('');
+    const [showUniquePointModal, setShowUniquePointModal] = useState(false);
+    const [matchDetails, setMatchDetails] = useState(match?.matchDetails || null);
     
     useEffect(() => {
         // Get the user ID from AsyncStorage
@@ -69,9 +75,11 @@ const MatchDetailsScreen = ({ route, navigation }) => {
             category: matchObj.category || 'Personal Item',
             location: matchObj.lostLocation || 'Not specified',
             date: matchObj.lostDate || new Date().toISOString(),
+            uniquePoint: matchObj.uniquePoint || null, // Include the unique point
+            contact: matchObj.lostItemContact || 'Not provided',
             user: {
-                _id: userId || 'u1',
-                name: 'You',
+                _id: matchObj.lostItemOwner || userId || 'u1',
+                name: 'Item Owner',
                 email: 'user@example.com'
             }
         });
@@ -87,12 +95,18 @@ const MatchDetailsScreen = ({ route, navigation }) => {
             date: matchObj.foundDate || new Date().toISOString(),
             contact: foundByUser.contact || matchObj.contact || 'Not provided',
             foundByUser: {
-                id: foundByUser.id || 'unknown',
-                name: foundByUser.name || 'Unknown User',
+                id: foundByUser.id || matchObj.foundItemOwner || 'unknown',
+                name: foundByUser.name || 'Found Item Reporter',
                 avatar: foundByUser.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg'
             }
         });
         
+        // Set match details from object
+        if (matchObj.matchDetails) {
+            setMatchDetails(matchObj.matchDetails);
+        }
+        
+        console.log('Lost item uniquePoint:', matchObj.uniquePoint);
         console.log('Founder data:', foundItem?.foundByUser);
         setLoading(false);
     };
@@ -223,37 +237,54 @@ const MatchDetailsScreen = ({ route, navigation }) => {
     };
     
     const handleContactOwner = () => {
-        if (!userId) {
-            Alert.alert('Error', 'You need to be logged in to contact the owner.');
+        // First verify the unique point if not already verified
+        if (!uniquePointVerified && lostItem && lostItem.uniquePoint) {
+            setShowUniquePointModal(true);
             return;
         }
         
-        if (!foundItem || !foundItem.foundByUser) {
-            Alert.alert('Error', 'Founder information is not available.');
-            return;
+        // If verified or no unique point, proceed to contact
+        if (lostItem && lostItem.user && lostItem.user._id) {
+            navigation.navigate('ChatScreen', {
+                receiverId: lostItem.user._id,
+                receiverName: lostItem.user.name || 'Item Owner',
+                matchId: match ? match._id : null,
+                lostItemId: lostItem._id,
+                foundItemId: foundItem._id
+            });
+            
+            // Add activity if needed
+            addToRecentActivity('contacted');
+        } else {
+            Alert.alert('Contact Information', `Please reach out to the owner at: ${lostItem?.contact || 'Not provided'}`);
         }
-        
-        console.log('Navigating to chat with:', foundItem.foundByUser);
-        
-        // Ensure we have a valid avatar URL
-        const avatarUrl = foundItem.foundByUser?.avatar || 'https://randomuser.me/api/portraits/lego/1.jpg';
-        
-        // Navigate to chat screen with the contact information
-        navigation.navigate('ChatScreen', {
-            recipientId: foundItem.foundByUser.id,
-            recipientName: foundItem.foundByUser.name || 'Unknown User',
-            recipientAvatar: avatarUrl,
-            matchId: match?.id || 'unknown',
-            itemDescription: foundItem.description || 'Found item',
-            // Include additional context about the match
-            matchContext: {
-                matchConfidence: matchScore || 0,
-                lostItemDescription: lostItem?.description || '',
-                foundItemDescription: foundItem?.description || '',
-                foundLocation: foundItem?.location || '',
-                foundDate: foundItem?.date || ''
+    };
+    
+    const verifyUniquePoint = () => {
+        if (lostItem && lostItem.uniquePoint && uniquePointInput) {
+            // Check if the entered unique point matches
+            if (uniquePointInput.trim().toLowerCase() === lostItem.uniquePoint.trim().toLowerCase()) {
+                setUniquePointVerified(true);
+                setShowUniquePointModal(false);
+                
+                // Proceed to contact
+                if (lostItem.user && lostItem.user._id) {
+                    navigation.navigate('ChatScreen', {
+                        receiverId: lostItem.user._id,
+                        receiverName: lostItem.user.name || 'Item Owner',
+                        matchId: match ? match._id : null,
+                        lostItemId: lostItem._id,
+                        foundItemId: foundItem._id
+                    });
+                } else {
+                    Alert.alert('Contact Information', `Please reach out to the owner at: ${lostItem?.contact || 'Not provided'}`);
+                }
+            } else {
+                Alert.alert('Verification Failed', 'The unique point you entered does not match. Please try again.');
             }
-        });
+        } else {
+            Alert.alert('Error', 'Please enter the unique point detail.');
+        }
     };
     
     const handleConfirmMatch = () => {
@@ -463,6 +494,80 @@ const MatchDetailsScreen = ({ route, navigation }) => {
                     </View>
                 </View>
                 
+                {/* Match Details Section */}
+                <View style={styles.matchDetailsSection}>
+                    <Text style={styles.sectionTitle}>Match Analysis</Text>
+                    <View style={styles.matchDetailsCard}>
+                        {/* Match Score Breakdown */}
+                        {matchDetails && (
+                            <View style={styles.matchScoreBreakdown}>
+                                <Text style={styles.matchBreakdownTitle}>Match Score Breakdown:</Text>
+                                <View style={styles.scoreComponent}>
+                                    <Text style={styles.scoreLabel}>Description Match:</Text>
+                                    <View style={styles.scoreBarContainer}>
+                                        <View 
+                                            style={[
+                                                styles.scoreBar, 
+                                                { width: `${Math.min(Number(matchDetails.tokenMatch || 0) * 100 / 40, 100)}%` }
+                                            ]} 
+                                        />
+                                    </View>
+                                    <Text style={styles.scoreValue}>{matchDetails?.tokenMatch || '0'}/40</Text>
+                                </View>
+                                <View style={styles.scoreComponent}>
+                                    <Text style={styles.scoreLabel}>Feature Match:</Text>
+                                    <View style={styles.scoreBarContainer}>
+                                        <View 
+                                            style={[
+                                                styles.scoreBar, 
+                                                { width: `${Math.min(Number(matchDetails?.featureMatch || 0) * 100 / 40, 100)}%` }
+                                            ]} 
+                                        />
+                                    </View>
+                                    <Text style={styles.scoreValue}>{matchDetails?.featureMatch || '0'}/40</Text>
+                                </View>
+                                <View style={styles.scoreComponent}>
+                                    <Text style={styles.scoreLabel}>Attribute Match:</Text>
+                                    <View style={styles.scoreBarContainer}>
+                                        <View 
+                                            style={[
+                                                styles.scoreBar, 
+                                                { width: `${Math.min(Number(matchDetails?.attributeMatch || 0) * 100 / 20, 100)}%` }
+                                            ]} 
+                                        />
+                                    </View>
+                                    <Text style={styles.scoreValue}>{matchDetails?.attributeMatch || '0'}/20</Text>
+                                </View>
+                            </View>
+                        )}
+                        
+                        {/* Unique Point Verification Status */}
+                        <View style={styles.verificationStatus}>
+                            <Text style={styles.verificationTitle}>
+                                Unique Point Verification:
+                            </Text>
+                            <View style={styles.verificationStatusContainer}>
+                                <Ionicons 
+                                    name={uniquePointVerified ? "shield-checkmark" : "shield"}
+                                    size={24} 
+                                    color={uniquePointVerified ? "#4CAF50" : "#FFC107"} 
+                                />
+                                <Text style={[
+                                    styles.verificationStatusText, 
+                                    { color: uniquePointVerified ? "#4CAF50" : "#FFC107" }
+                                ]}>
+                                    {uniquePointVerified ? "Verified" : "Verification Required"}
+                                </Text>
+                            </View>
+                            {!uniquePointVerified && lostItem?.uniquePoint && (
+                                <Text style={styles.verificationInstruction}>
+                                    You need to verify the unique point of this item before contacting the owner.
+                                </Text>
+                            )}
+                        </View>
+                    </View>
+                </View>
+                
                 <View style={styles.founderSection}>
                     <Text style={styles.sectionTitle}>Found By</Text>
                     <View style={styles.founderCard}>
@@ -515,6 +620,47 @@ const MatchDetailsScreen = ({ route, navigation }) => {
                     </TouchableOpacity>
                 </View>
             </ScrollView>
+            
+            {/* Unique Point Verification Modal */}
+            <Modal
+                visible={showUniquePointModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowUniquePointModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        <Text style={styles.modalTitle}>Verify Unique Point</Text>
+                        <Text style={styles.modalDescription}>
+                            To contact the owner, please enter the unique point detail they provided for verification.
+                        </Text>
+                        
+                        <TextInput
+                            style={styles.modalInput}
+                            placeholder="Enter the unique point detail"
+                            value={uniquePointInput}
+                            onChangeText={setUniquePointInput}
+                            multiline={true}
+                        />
+                        
+                        <View style={styles.modalButtonsContainer}>
+                            <TouchableOpacity 
+                                style={[styles.modalButton, styles.modalCancelButton]}
+                                onPress={() => setShowUniquePointModal(false)}
+                            >
+                                <Text style={styles.modalButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity 
+                                style={[styles.modalButton, styles.modalVerifyButton]}
+                                onPress={verifyUniquePoint}
+                            >
+                                <Text style={styles.modalButtonText}>Verify</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -776,6 +922,137 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#fff',
         marginLeft: 8,
+    },
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContainer: {
+        backgroundColor: '#fff',
+        padding: 20,
+        borderRadius: 10,
+        width: '80%',
+        maxHeight: '80%',
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 12,
+    },
+    modalDescription: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 20,
+    },
+    modalInput: {
+        height: 100,
+        borderColor: '#3d0c45',
+        borderWidth: 1,
+        borderRadius: 4,
+        padding: 8,
+        marginBottom: 20,
+    },
+    modalButtonsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    modalButton: {
+        padding: 12,
+        borderRadius: 4,
+        backgroundColor: '#3d0c45',
+    },
+    modalCancelButton: {
+        backgroundColor: '#dc3545',
+    },
+    modalVerifyButton: {
+        backgroundColor: '#4CAF50',
+    },
+    modalButtonText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    matchDetailsSection: {
+        padding: 16,
+    },
+    matchDetailsCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    matchScoreBreakdown: {
+        marginBottom: 16,
+    },
+    matchBreakdownTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 12,
+    },
+    scoreComponent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    scoreLabel: {
+        fontSize: 14,
+        color: '#555',
+        width: 120,
+    },
+    scoreBarContainer: {
+        flex: 1,
+        height: 8,
+        backgroundColor: '#f0f0f0',
+        borderRadius: 4,
+        marginHorizontal: 8,
+    },
+    scoreBar: {
+        height: '100%',
+        backgroundColor: '#3d0c45',
+        borderRadius: 4,
+    },
+    scoreValue: {
+        fontSize: 14,
+        color: '#555',
+        width: 40,
+        textAlign: 'right',
+    },
+    verificationStatus: {
+        marginTop: 16,
+        padding: 12,
+        backgroundColor: '#f9f9f9',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+    },
+    verificationTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
+        marginBottom: 8,
+    },
+    verificationStatusContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    verificationStatusText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginLeft: 8,
+    },
+    verificationInstruction: {
+        fontSize: 14,
+        color: '#666',
+        marginTop: 8,
+        fontStyle: 'italic',
     },
 });
 

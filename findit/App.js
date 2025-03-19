@@ -9,7 +9,7 @@ import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import HomePage from './screens/Homepage.js';
 import ReportFoundItem from './screens/ReportFoundItem';
 import ReportLostItem from './screens/ReportLostItem';
-import ShowFoundItemData from './screens/Showfounditemdata';
+import ShowFoundItemData from './screens/ShowFoundItemData';
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
 import ChatListScreen from './screens/ChatListScreen.js';

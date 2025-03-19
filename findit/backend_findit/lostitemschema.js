@@ -65,9 +65,9 @@ const lostItemSchema = new mongoose.Schema({
     required: false,
     trim: true
   },
-  serialNumber: {
+  uniquePoint: {
     type: String,
-    required: false,
+    required: true,
     trim: true
   },
   
