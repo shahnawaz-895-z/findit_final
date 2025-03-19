@@ -1256,42 +1256,24 @@ app.get('/notifications/:userId', async (req, res) => {
 });
 
 // **Mark notification as read**
-app.put('/notifications/:notificationId/read', async (req, res) => {
+app.put('/api/notifications/:notificationId/read', async (req, res) => {
     try {
         const { notificationId } = req.params;
         
-        if (!notificationId) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Notification ID is required'
-            });
-        }
-        
         const notification = await Notification.findByIdAndUpdate(
             notificationId,
-            { $set: { read: true } },
+            { read: true },
             { new: true }
         );
-        
+
         if (!notification) {
-            return res.status(404).json({
-                status: 'error',
-                message: 'Notification not found'
-            });
+            return res.status(404).json({ error: 'Notification not found' });
         }
-        
-        res.status(200).json({
-            status: 'success',
-            notification
-        });
-        
+
+        res.json(notification);
     } catch (error) {
         console.error('Error marking notification as read:', error);
-        res.status(500).json({
-            status: 'error',
-            message: 'Error marking notification as read',
-            details: error.message
-        });
+        res.status(500).json({ error: 'Failed to update notification' });
     }
 });
 
@@ -1646,6 +1628,151 @@ app.get('/user-matches/:userId', async (req, res) => {
     }
 });
 
+// Notification polling endpoint
+app.get('/api/notifications/poll/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { lastPolled } = req.query;
+        
+        const query = {
+            userId,
+            createdAt: { $gt: new Date(parseInt(lastPolled) || 0) }
+        };
+        
+        const notifications = await Notification.find(query)
+            .sort({ createdAt: -1 })
+            .limit(50);
+            
+        res.json({
+            success: true,
+            notifications,
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        console.error('Error polling notifications:', error);
+        res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+});
+
+app.get('/api/notifications/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 20 } = req.query;
+
+        const skip = (page - 1) * limit;
+
+        const notifications = await Notification.find({ userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Notification.countDocuments({ userId });
+
+        res.json({
+            success: true,
+            notifications,
+            total,
+            hasMore: skip + notifications.length < total
+        });
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch notifications' 
+        });
+    }
+});
+
+app.put('/api/notifications/:notificationId/read', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        
+        const notification = await Notification.findByIdAndUpdate(
+            notificationId,
+            { read: true },
+            { new: true }
+        );
+
+        if (!notification) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Notification not found' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            notification 
+        });
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to update notification' 
+        });
+    }
+});
+
+app.put('/api/notifications/:userId/read-all', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const result = await Notification.updateMany(
+            { userId, read: false },
+            { read: true }
+        );
+
+        res.json({ 
+            success: true,
+            modifiedCount: result.modifiedCount
+        });
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to update notifications' 
+        });
+    }
+});
+
+app.get('/api/notifications/:userId/unread-count', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const count = await Notification.countDocuments({
+            userId,
+            read: false
+        });
+
+        res.json({ count });
+    } catch (error) {
+        console.error('Error getting unread count:', error);
+        res.status(500).json({ error: 'Failed to get unread count' });
+    }
+});
+
+// Create notification
+async function createNotification(userId, type, title, message, data = {}) {
+    try {
+        // Create notification in database
+        const notification = new Notification({
+            userId,
+            type,
+            title,
+            message,
+            ...data,
+            read: false,
+            createdAt: new Date()
+        });
+        
+        await notification.save();
+        return notification;
+    } catch (error) {
+        console.error('Error creating notification:', error);
+        throw error;
+    }
+}
+
 // **Start Server**
 const PORT = process.env.PORT || 5000;
 
@@ -1939,3 +2066,28 @@ async function checkUsersHaveMatch(userId1, userId2) {
         return false; // Default to false if there's an error checking
     }
 }
+
+// Test endpoint to create a notification
+app.post('/api/test/notification', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' });
+        }
+
+        // Create a test notification
+        const notification = await createNotification(
+            userId,
+            'system',
+            'Test Notification',
+            'This is a test notification to verify the system works.',
+            { testData: 'some test data' }
+        );
+
+        res.json({ success: true, notification });
+    } catch (error) {
+        console.error('Error creating test notification:', error);
+        res.status(500).json({ error: 'Failed to create test notification' });
+    }
+});

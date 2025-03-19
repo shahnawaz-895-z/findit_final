@@ -20,6 +20,7 @@ import DashboardScreen from './screens/DashboardScreen';
 import ActivityListScreen from './screens/ActivityListScreen';
 import TipsScreen from './screens/TipsScreen';
 import HelpScreen from './screens/HelpScreen';
+import TestNotification from './screens/TestNotification';
 
 const Stack = createStackNavigator();
 
@@ -76,6 +77,17 @@ export default function App() {
           <Stack.Screen name="ActivityListScreen" component={ActivityListScreen} />
           <Stack.Screen name="TipsScreen" component={TipsScreen} />
           <Stack.Screen name="HelpScreen" component={HelpScreen} />
+          <Stack.Screen 
+            name="TestNotification" 
+            component={TestNotification}
+            options={{
+                title: 'Test Notifications',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

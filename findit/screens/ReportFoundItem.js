@@ -45,7 +45,7 @@ const ReportFoundItem = () => {
 
   const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
   const HUGGING_FACE_API_KEY = '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';
-gt
+
   useEffect(() => {
     const getLocationPermission = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();

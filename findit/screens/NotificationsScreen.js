@@ -1,82 +1,138 @@
-import React, { useState, useEffect } from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    FlatList, 
-    TouchableOpacity, 
-    ActivityIndicator,
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+    View,
+    Text,
+    FlatList,
+    StyleSheet,
+    TouchableOpacity,
     RefreshControl,
-    Alert,
-    Dimensions,
-    SafeAreaView
+    AppState,
+    Platform
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
+import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import API_CONFIG from '../config';
+import { API_URL, POLLING_INTERVAL } from '../config';
+import { formatDistanceToNow } from 'date-fns';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const { width, height } = Dimensions.get('window');
-const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
-
-const NotificationsScreen = ({ navigation }) => {
+export default function NotificationsScreen({ navigation }) {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [userId, setUserId] = useState(null);
-    
-    useEffect(() => {
-        // Get the user ID from AsyncStorage
-        const getUserId = async () => {
-            try {
-                const userData = await AsyncStorage.getItem('userData');
-                if (userData) {
-                    const parsedUserData = JSON.parse(userData);
-                    setUserId(parsedUserData._id);
-                    fetchNotifications(parsedUserData._id);
-                } else {
-                    setLoading(false);
-                }
-            } catch (error) {
-                console.error('Error getting user data:', error);
-                setLoading(false);
-            }
-        };
-        
-        getUserId();
-    }, []);
-    
-    const fetchNotifications = async (id) => {
-        if (!id) return;
-        
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [lastPolled, setLastPolled] = useState(Date.now());
+    const isFocused = useIsFocused();
+
+    // Get userId from storage
+    const getUserId = async () => {
         try {
-            const response = await axios.get(`${BACKEND_URL}/notifications/${id}`);
-            if (response.data.status === 'success') {
-                setNotifications(response.data.notifications);
+            const userData = await AsyncStorage.getItem('userData');
+            if (userData) {
+                const { _id } = JSON.parse(userData);
+                return _id;
             }
+            return null;
+        } catch (error) {
+            console.error('Error getting userId:', error);
+            return null;
+        }
+    };
+
+    // Fetch notifications with pagination
+    const fetchNotifications = async (pageNum = 1, shouldRefresh = false) => {
+        try {
+            const userId = await getUserId();
+            console.log('Fetching notifications for userId:', userId);
+            if (!userId) {
+                console.log('No userId found, returning');
+                return;
+            }
+
+            const url = `${API_URL}/api/notifications/${userId}?page=${pageNum}&limit=20`;
+            console.log('Fetching notifications from:', url);
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            console.log('Notifications response:', data);
+
+            if (!response.ok) throw new Error(data.error || 'Failed to fetch notifications');
+
+            const notificationsList = data.notifications || [];
+            console.log('Received notifications:', notificationsList.length);
+            
+            setNotifications(prev => 
+                shouldRefresh ? notificationsList : [...prev, ...notificationsList]
+            );
+            setHasMore(data.hasMore);
+            setPage(pageNum);
+            setLoading(false);
+            setRefreshing(false);
         } catch (error) {
             console.error('Error fetching notifications:', error);
-            Alert.alert('Error', 'Failed to fetch notifications');
-        } finally {
             setLoading(false);
             setRefreshing(false);
         }
     };
-    
-    const onRefresh = () => {
-        setRefreshing(true);
-        fetchNotifications(userId);
+
+    // Poll for new notifications
+    const pollNotifications = async () => {
+        try {
+            const userId = await getUserId();
+            console.log('Polling notifications for userId:', userId);
+            if (!userId) {
+                console.log('No userId found for polling, returning');
+                return;
+            }
+
+            const url = `${API_URL}/api/notifications/poll/${userId}?lastPolled=${lastPolled}`;
+            console.log('Polling notifications from:', url);
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            console.log('Polling response:', data);
+
+            if (!response.ok) throw new Error(data.error || 'Failed to fetch notifications');
+
+            const newNotifications = data.notifications || [];
+            console.log('Received new notifications:', newNotifications.length);
+            
+            if (newNotifications.length > 0) {
+                setNotifications(prev => {
+                    const allNotifications = [...newNotifications, ...prev];
+                    // Remove duplicates based on _id
+                    const uniqueNotifications = Array.from(
+                        new Map(allNotifications.map(item => [item._id, item])).values()
+                    );
+                    console.log('Updated notifications count:', uniqueNotifications.length);
+                    return uniqueNotifications;
+                });
+            }
+
+            setLastPolled(data.timestamp || Date.now());
+        } catch (error) {
+            console.error('Error polling notifications:', error);
+        }
     };
-    
+
+    // Mark notification as read
     const markAsRead = async (notificationId) => {
         try {
-            await axios.put(`${BACKEND_URL}/notifications/${notificationId}/read`);
-            
-            // Update the local state
-            setNotifications(prevNotifications => 
-                prevNotifications.map(notification => 
-                    notification._id === notificationId 
-                        ? { ...notification, read: true } 
+            const response = await fetch(
+                `${API_URL}/api/notifications/${notificationId}/read`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
+            const data = await response.json();
+
+            if (!response.ok) throw new Error(data.error || 'Failed to mark notification as read');
+
+            setNotifications(prev =>
+                prev.map(notification =>
+                    notification._id === notificationId
+                        ? { ...notification, read: true }
                         : notification
                 )
             );
@@ -84,219 +140,223 @@ const NotificationsScreen = ({ navigation }) => {
             console.error('Error marking notification as read:', error);
         }
     };
-    
-    const handleNotificationPress = async (notification) => {
-        // Mark the notification as read
-        if (!notification.read) {
-            await markAsRead(notification._id);
-        }
-        
-        // Handle different notification types
-        switch (notification.type) {
-            case 'match_found':
-                // Navigate to match details
-                navigation.navigate('MatchDetailsScreen', {
-                    lostItemId: notification.lostItemId,
-                    foundItemId: notification.foundItemId
-                });
-                break;
-                
-            case 'message_received':
-                // Navigate to chat
-                navigation.navigate('ChatScreen', {
-                    receiverId: notification.senderId,
-                    receiverName: notification.senderName || 'User'
-                });
-                break;
-                
-            case 'system':
-                // Just display the message
-                Alert.alert('System Notification', notification.message);
-                break;
-                
-            default:
-                console.warn('Unknown notification type:', notification.type);
+
+    // Mark all notifications as read
+    const markAllAsRead = async () => {
+        try {
+            const userId = await getUserId();
+            if (!userId) return;
+
+            const response = await fetch(
+                `${API_URL}/api/notifications/${userId}/read-all`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' }
+                }
+            );
+            const data = await response.json();
+
+            if (!response.ok) throw new Error(data.error || 'Failed to mark all notifications as read');
+
+            setNotifications(prev =>
+                prev.map(notification => ({ ...notification, read: true }))
+            );
+        } catch (error) {
+            console.error('Error marking all notifications as read:', error);
         }
     };
-    
-    const renderNotificationItem = ({ item }) => {
-        // Format the date
-        const date = new Date(item.createdAt);
-        const formattedDate = date.toLocaleDateString();
-        const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        // Set icon based on notification type
-        let icon;
-        switch (item.type) {
-            case 'match_found':
-                icon = 'checkmark-circle-outline';
-                break;
-            case 'message_received':
-                icon = 'chatbubble-outline';
-                break;
-            case 'system':
-                icon = 'information-circle-outline';
-                break;
-            default:
-                icon = 'notifications-outline';
+
+    // Setup polling
+    useEffect(() => {
+        let pollTimer;
+
+        if (isFocused) {
+            pollTimer = setInterval(pollNotifications, POLLING_INTERVAL);
+            pollNotifications(); // Initial poll
         }
-        
+
+        return () => {
+            if (pollTimer) clearInterval(pollTimer);
+        };
+    }, [isFocused]);
+
+    // Initial fetch
+    useEffect(() => {
+        if (isFocused) {
+            setLoading(true);
+            fetchNotifications(1, true);
+        }
+    }, [isFocused]);
+
+    // Handle refresh
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchNotifications(1, true);
+    }, []);
+
+    // Load more notifications
+    const loadMore = () => {
+        if (!loading && hasMore) {
+            fetchNotifications(page + 1);
+        }
+    };
+
+    // Render notification item
+    const renderNotification = ({ item }) => {
+        const getNotificationIcon = (type) => {
+            switch (type) {
+                case 'match_found':
+                    return 'target';
+                case 'message_received':
+                    return 'message-text';
+                default:
+                    return 'bell';
+            }
+        };
+
         return (
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={[
                     styles.notificationItem,
                     !item.read && styles.unreadNotification
                 ]}
-                onPress={() => handleNotificationPress(item)}
+                onPress={() => {
+                    markAsRead(item._id);
+                    // Navigate based on notification type
+                    if (item.type === 'message_received' && item.chatId) {
+                        navigation.navigate('Chat', { chatId: item.chatId });
+                    } else if (item.type === 'match_found' && item.matchId) {
+                        navigation.navigate('MatchDetails', { matchId: item.matchId });
+                    }
+                }}
             >
-                <View style={styles.iconContainer}>
-                    <Ionicons name={icon} size={24} color="#3d0c45" />
-                </View>
-                
                 <View style={styles.notificationContent}>
-                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                    <Text style={styles.notificationMessage}>{item.message}</Text>
-                    <Text style={styles.notificationTime}>{formattedDate} at {formattedTime}</Text>
+                    <Icon
+                        name={getNotificationIcon(item.type)}
+                        size={24}
+                        color="#3d0c45"
+                        style={styles.icon}
+                    />
+                    <View style={styles.textContainer}>
+                        <Text style={styles.title}>{item.title}</Text>
+                        <Text style={styles.message}>{item.message}</Text>
+                        <Text style={styles.time}>
+                            {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                        </Text>
+                    </View>
                 </View>
-                
-                {!item.read && (
-                    <View style={styles.unreadIndicator} />
-                )}
             </TouchableOpacity>
         );
     };
-    
+
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity 
-                    style={styles.backButton}
-                    onPress={() => navigation.goBack()}
-                >
-                    <Ionicons name="arrow-back" size={24} color="#3d0c45" />
-                </TouchableOpacity>
                 <Text style={styles.headerTitle}>Notifications</Text>
+                <TouchableOpacity
+                    style={styles.markAllButton}
+                    onPress={markAllAsRead}
+                >
+                    <Text style={styles.markAllText}>Mark all as read</Text>
+                </TouchableOpacity>
             </View>
-            
-            {loading ? (
-                <ActivityIndicator size="large" color="#3d0c45" style={styles.loader} />
-            ) : notifications.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                    <Ionicons name="notifications-off-outline" size={64} color="#ccc" />
-                    <Text style={styles.emptyText}>No notifications yet</Text>
-                </View>
-            ) : (
-                <FlatList
-                    data={notifications}
-                    renderItem={renderNotificationItem}
-                    keyExtractor={(item) => item._id.toString()}
-                    contentContainerStyle={styles.listContainer}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            colors={['#3d0c45']}
-                        />
-                    }
-                />
-            )}
-        </SafeAreaView>
+
+            <FlatList
+                data={notifications}
+                renderItem={renderNotification}
+                keyExtractor={item => item._id}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={['#3d0c45']}
+                    />
+                }
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.5}
+                ListEmptyComponent={
+                    !loading && (
+                        <View style={styles.emptyContainer}>
+                            <Icon name="bell-off" size={48} color="#666" />
+                            <Text style={styles.emptyText}>No notifications yet</Text>
+                        </View>
+                    )
+                }
+            />
+        </View>
     );
-};
+}
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: '#f8f9fa'
     },
     header: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: width * 0.05,
-        backgroundColor: '#FFFFFF',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-    },
-    backButton: {
-        marginRight: width * 0.03,
+        padding: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e9ecef'
     },
     headerTitle: {
-        fontSize: width * 0.06,
+        fontSize: 20,
         fontWeight: 'bold',
-        color: '#3d0c45',
+        color: '#3d0c45'
     },
-    listContainer: {
-        padding: width * 0.03,
+    markAllButton: {
+        padding: 8
+    },
+    markAllText: {
+        color: '#3d0c45',
+        fontSize: 14
     },
     notificationItem: {
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        borderRadius: width * 0.03,
-        marginBottom: height * 0.015,
-        padding: width * 0.04,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
+        backgroundColor: '#fff',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e9ecef'
     },
     unreadNotification: {
-        backgroundColor: '#f0e6f5', // Light purple for unread notifications
-    },
-    iconContainer: {
-        width: width * 0.12,
-        height: width * 0.12,
-        borderRadius: width * 0.06,
-        backgroundColor: '#f0e6f5',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: width * 0.03,
+        backgroundColor: '#f8f0ff'
     },
     notificationContent: {
-        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'flex-start'
     },
-    notificationTitle: {
-        fontSize: width * 0.04,
+    icon: {
+        marginRight: 12
+    },
+    textContainer: {
+        flex: 1
+    },
+    title: {
+        fontSize: 16,
         fontWeight: 'bold',
         color: '#3d0c45',
-        marginBottom: height * 0.005,
+        marginBottom: 4
     },
-    notificationMessage: {
-        fontSize: width * 0.035,
-        color: '#333',
-        marginBottom: height * 0.01,
+    message: {
+        fontSize: 14,
+        color: '#495057',
+        marginBottom: 8
     },
-    notificationTime: {
-        fontSize: width * 0.03,
-        color: '#999',
-    },
-    unreadIndicator: {
-        width: width * 0.025,
-        height: width * 0.025,
-        borderRadius: width * 0.0125,
-        backgroundColor: '#3d0c45',
-        marginLeft: width * 0.02,
-        alignSelf: 'center',
+    time: {
+        fontSize: 12,
+        color: '#6c757d'
     },
     emptyContainer: {
         flex: 1,
-        justifyContent: 'center',
         alignItems: 'center',
+        justifyContent: 'center',
+        padding: 32
     },
     emptyText: {
-        fontSize: width * 0.045,
-        color: '#999',
-        marginTop: height * 0.02,
-    },
-    loader: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-});
-
-export default NotificationsScreen; 
+        marginTop: 16,
+        fontSize: 16,
+        color: '#666',
+        textAlign: 'center'
+    }
+}); 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,25 +14,32 @@ import {
   Dimensions,
   ScrollView,
   ImageBackground,
-  ActivityIndicator
+  ActivityIndicator,
+  AppState
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { API_URL } from '../config';
 
 // Constants
 const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 const { width } = Dimensions.get('window');
 const ACTIVITY_STORAGE_KEY = 'user_activities';
+const POLLING_INTERVAL = 15000; // Poll every 15 seconds
 
 const HomePage = ({ navigation }) => {
   const [notificationVisible, setNotificationVisible] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(2);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [lastPolled, setLastPolled] = useState(null);
+  const pollingInterval = useRef(null);
+  const appState = useRef(AppState.currentState);
   
   // Sample notifications data
-  const notifications = [
+  const notificationsData = [
     { id: '1', title: 'New Match', message: 'Your lost item matches with a found item', time: '2 mins ago', read: false, type: 'match', itemId: '1' },
     { id: '2', title: 'Message Received', message: 'You have a new message from Sarah', time: '1 hour ago', read: false, type: 'message', chatId: '1' },
     { id: '3', title: 'Item Returned', message: 'John has marked your item as returned', time: '3 hours ago', read: true, type: 'return', itemId: '2' },
@@ -440,6 +447,7 @@ const HomePage = ({ navigation }) => {
 
   // Helper function to capitalize first letter
   const capitalizeFirstLetter = (string) => {
+    if (!string) return '';
     return string.charAt(0).toUpperCase() + string.slice(1);
   };
 
@@ -449,6 +457,105 @@ const HomePage = ({ navigation }) => {
       <StatusBar translucent backgroundColor={backgroundColor} {...props} />
     </View>
   );
+
+  useEffect(() => {
+    const setupNotifications = async () => {
+      try {
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          const { _id } = JSON.parse(userData);
+          await fetchNotifications(_id);
+          startPolling(_id);
+        }
+      } catch (error) {
+        console.error('Error setting up notifications:', error);
+      }
+    };
+    
+    setupNotifications();
+    
+    // Handle app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App has come to foreground
+        setupNotifications();
+      } else if (nextAppState.match(/inactive|background/)) {
+        // App has gone to background
+        stopPolling();
+      }
+      appState.current = nextAppState;
+    });
+    
+    return () => {
+      stopPolling();
+      subscription.remove();
+    };
+  }, []);
+  
+  const startPolling = (userId) => {
+    if (pollingInterval.current) return;
+    
+    pollingInterval.current = setInterval(() => {
+      pollNotifications(userId);
+    }, POLLING_INTERVAL);
+  };
+  
+  const stopPolling = () => {
+    if (pollingInterval.current) {
+      clearInterval(pollingInterval.current);
+      pollingInterval.current = null;
+    }
+  };
+  
+  const fetchNotifications = async (userId) => {
+    try {
+      const response = await axios.get(`${API_URL}/api/notifications/${userId}`);
+      if (response.data.status === 'success') {
+        setNotifications(response.data.notifications);
+        setLastPolled(new Date().toISOString());
+        
+        // Update badge count
+        const unreadCount = response.data.notifications.filter(n => !n.read).length;
+        setUnreadMessages(unreadCount);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+  
+  const pollNotifications = async (userId) => {
+    if (!userId || !lastPolled) return;
+    
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/notifications/poll/${userId}`,
+        { params: { lastPolled } }
+      );
+      
+      if (response.data.status === 'success' && response.data.notifications.length > 0) {
+        setNotifications(prevNotifications => {
+          const newNotifications = [...response.data.notifications];
+          const existingIds = new Set(prevNotifications.map(n => n._id));
+          const uniqueNewNotifications = newNotifications.filter(n => !existingIds.has(n._id));
+          
+          // Show the latest notification
+          if (uniqueNewNotifications.length > 0) {
+            setNotificationVisible(true);
+          }
+          
+          // Update badge count
+          const allUnread = [...uniqueNewNotifications, ...prevNotifications].filter(n => !n.read).length;
+          setUnreadMessages(allUnread);
+          
+          return [...uniqueNewNotifications, ...prevNotifications];
+        });
+      }
+      
+      setLastPolled(response.data.timestamp);
+    } catch (error) {
+      console.error('Error polling notifications:', error);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -466,7 +573,7 @@ const HomePage = ({ navigation }) => {
             <Icon name="notifications-outline" size={24} color="#fff" />
             {/* Notification Badge */}
             <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>2</Text>
+              <Text style={styles.notificationBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -533,12 +640,12 @@ const HomePage = ({ navigation }) => {
             
             <TouchableOpacity
               style={styles.quickActionButton}
-              onPress={navigateToDashboard}
+              onPress={() => navigation.navigate('TestNotification')}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: '#d3afd7' }]}>
-                <Icon name="stats-chart-outline" size={24} color="#fff" />
+                <Icon name="notifications-outline" size={24} color="#fff" />
               </View>
-              <Text style={styles.quickActionText}>Dashboard</Text>
+              <Text style={styles.quickActionText}>Test Notifications</Text>
             </TouchableOpacity>
           </View>
         </View>

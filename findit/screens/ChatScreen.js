@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     TouchableOpacity,
@@ -11,7 +11,8 @@ import {
     ActivityIndicator,
     Alert,
     SafeAreaView,
-    StatusBar
+    StatusBar,
+    AppState
 } from 'react-native';
 import { GiftedChat, Bubble, InputToolbar, Send, Composer } from 'react-native-gifted-chat';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +26,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BASE_URL = API_CONFIG.BASE_URL;
 const API_URL = API_CONFIG.API_URL;
 const BACKUP_API_URL = `${BASE_URL}:5001`;
+const POLLING_INTERVAL = 3000; // Poll every 3 seconds
 
 // Calculate responsive sizes
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
@@ -63,6 +65,9 @@ const ChatScreen = ({ route, navigation }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [serverUrl, setServerUrl] = useState(API_URL);
+    const [lastPolled, setLastPolled] = useState(null);
+    const pollingInterval = useRef(null);
+    const appState = useRef(AppState.currentState);
 
     // Check which server is available
     useEffect(() => {
@@ -365,110 +370,123 @@ const ChatScreen = ({ route, navigation }) => {
         }
     }, [itemDescription, matchContext, messages]);
 
-    const onSend = useCallback((newMessages = []) => {
-        if (!currentUserId) {
-            console.error('Cannot send message: currentUserId is missing');
-            Alert.alert('Error', 'You need to be logged in to send messages');
-            return;
-        }
-        
-        if (!socket) {
-            console.error('Cannot send message: socket connection is missing');
-            Alert.alert('Error', 'Chat connection not established');
-            return;
-        }
-        
-        if (!recipient._id) {
-            console.error('Cannot send message: recipient ID is missing');
-            Alert.alert('Error', 'Invalid recipient information');
-            return;
-        }
-
-        console.log('Sending message to', recipient._id, 'from', currentUserId);
-        console.log('Message content:', newMessages[0].text);
-
-        // Generate a unique ID for the message
-        const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-        
-        // Format the message for GiftedChat
-        const giftedMessage = {
-            _id: messageId,
-            text: newMessages[0].text,
-            createdAt: new Date(),
-            user: {
-                _id: currentUserId,
-                name: 'You',
-                // Don't set avatar for current user's messages
-            },
-            pending: true // Mark as pending until confirmed by server
+    useEffect(() => {
+        const setupChat = async () => {
+            if (!currentUserId || !recipient._id) return;
+            
+            await fetchMessages();
+            startPolling();
         };
-
-        // Add the message to the local state
-        // GiftedChat.append puts the new message at the beginning of the array
-        // which is correct for inverted={true}
-        setMessages(previousMessages => {
-            const updatedMessages = GiftedChat.append(previousMessages, [giftedMessage]);
-            
-            // Save to AsyncStorage for persistence
-            try {
-                const chatKey = `chat_${currentUserId}_${recipient._id}`;
-                AsyncStorage.setItem(chatKey, JSON.stringify(updatedMessages));
-            } catch (error) {
-                console.error('Error saving messages to AsyncStorage:', error);
+        
+        setupChat();
+        
+        // Handle app state changes
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+                // App has come to foreground
+                setupChat();
+            } else if (nextAppState.match(/inactive|background/)) {
+                // App has gone to background
+                stopPolling();
             }
-            
-            return updatedMessages;
+            appState.current = nextAppState;
         });
-
-        // Use only one method to send the message - either API or Socket.IO, not both
-        // We'll use the API method as it's more reliable
-        axios.post(`${serverUrl}/api/messages`, {
-            receiverId: recipient._id,
-            senderId: currentUserId,
-            text: newMessages[0].text,
-            messageId: messageId, // Send the client-generated ID to avoid duplicates
-            matchId: matchId || null // Include the match ID if available
-        })
-        .then(response => {
-            console.log('Message saved via API:', response.data);
-            
-            // Update the message to mark it as sent
-            setMessages(previousMessages => {
-                const updatedMessages = previousMessages.map(msg => 
-                    msg._id === messageId ? { ...msg, pending: false, sent: true } : msg
-                );
-                
-                // Save to AsyncStorage for persistence
-                try {
-                    const chatKey = `chat_${currentUserId}_${recipient._id}`;
-                    AsyncStorage.setItem(chatKey, JSON.stringify(updatedMessages));
-                } catch (error) {
-                    console.error('Error saving messages to AsyncStorage:', error);
+        
+        return () => {
+            stopPolling();
+            subscription.remove();
+        };
+    }, [currentUserId, recipient._id]);
+    
+    const startPolling = () => {
+        if (pollingInterval.current) return;
+        
+        pollingInterval.current = setInterval(() => {
+            pollMessages();
+        }, POLLING_INTERVAL);
+    };
+    
+    const stopPolling = () => {
+        if (pollingInterval.current) {
+            clearInterval(pollingInterval.current);
+            pollingInterval.current = null;
+        }
+    };
+    
+    const fetchMessages = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/api/messages`, {
+                params: {
+                    senderId: currentUserId,
+                    receiverId: recipient._id
                 }
-                
-                return updatedMessages;
             });
-        })
-        .catch(error => {
-            console.error('Error saving message via API:', error);
             
-            // If API fails, try Socket.IO as fallback
-            if (socket && socket.connected) {
-                try {
-                    socket.emit('sendMessage', {
-                        receiverId: recipient._id,
-                        senderId: currentUserId,
-                        text: newMessages[0].text,
-                        messageId: messageId, // Send the client-generated ID to avoid duplicates
-                        matchId: matchId || null // Include the match ID if available
-                    });
-                } catch (socketError) {
-                    console.error('Socket.IO fallback also failed:', socketError);
-                }
+            if (response.data.status === 'success') {
+                const formattedMessages = response.data.messages.map(formatMessage);
+                setMessages(formattedMessages);
+                setLastPolled(new Date().toISOString());
             }
+        } catch (error) {
+            console.error('Error fetching messages:', error);
+            setError('Failed to load messages');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const pollMessages = async () => {
+        if (!lastPolled) return;
+        
+        try {
+            const response = await axios.get(`${API_URL}/api/messages/poll`, {
+                params: {
+                    senderId: currentUserId,
+                    receiverId: recipient._id,
+                    lastPolled
+                }
+            });
+            
+            if (response.data.status === 'success' && response.data.messages.length > 0) {
+                const formattedMessages = response.data.messages.map(formatMessage);
+                setMessages(prevMessages => 
+                    GiftedChat.append(prevMessages, formattedMessages)
+                );
+            }
+            
+            setLastPolled(response.data.timestamp);
+        } catch (error) {
+            console.error('Error polling messages:', error);
+        }
+    };
+    
+    const onSend = useCallback(async (newMessages = []) => {
+        const messageText = newMessages[0].text;
+        const messageId = newMessages[0]._id;
+        
+        // Optimistically add message to UI
+        setMessages(previousMessages =>
+            GiftedChat.append(previousMessages, newMessages)
+        );
+        
+        try {
+            // Send message via API
+            const response = await axios.post(`${API_URL}/api/messages`, {
+                receiverId: recipient._id,
+                senderId: currentUserId,
+                text: messageText,
+                messageId,
+                matchId: matchId || null
+            });
+            
+            if (response.data.status !== 'success') {
+                throw new Error(response.data.message || 'Failed to send message');
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
             
             // If the error is because no match exists, show a specific message
-            if (error.response && error.response.data && error.response.data.message === 'Cannot send messages - no match exists between these users') {
+            if (error.response?.data?.message === 'Cannot send messages - no match exists between these users') {
                 Alert.alert(
                     'Cannot Send Message',
                     'You can only message users with whom you have a match.',
@@ -479,37 +497,15 @@ const ChatScreen = ({ route, navigation }) => {
                 setMessages(previousMessages => 
                     previousMessages.filter(msg => msg._id !== messageId)
                 );
-                
-                return;
-            }
-            
-            // Mark the message as failed
-            setMessages(previousMessages => {
-                const updatedMessages = previousMessages.map(msg => 
-                    msg._id === messageId ? { ...msg, pending: false, failed: true } : msg
+            } else {
+                Alert.alert(
+                    'Error',
+                    'Failed to send message. Please try again.',
+                    [{ text: 'OK' }]
                 );
-                
-                // Save to AsyncStorage for persistence
-                try {
-                    const chatKey = `chat_${currentUserId}_${recipient._id}`;
-                    AsyncStorage.setItem(chatKey, JSON.stringify(updatedMessages));
-                } catch (storageError) {
-                    console.error('Error saving messages to AsyncStorage:', storageError);
-                }
-                
-                return updatedMessages;
-            });
-            
-            // Show an error alert
-            Alert.alert(
-                'Message Status',
-                'Your message might not have been saved. Please check your connection.',
-                [{ text: 'OK' }]
-            );
-        });
-        
-        console.log('Message sending process initiated');
-    }, [socket, recipient._id, currentUserId, serverUrl, matchId]);
+            }
+        }
+    }, [currentUserId, recipient._id, matchId]);
 
     if (loading && messages.length === 0) {
         return (
@@ -546,7 +542,7 @@ const ChatScreen = ({ route, navigation }) => {
                             ) : (
                                 <View style={styles.placeholderAvatar}>
                                     <Text style={styles.avatarText}>
-                                        {recipient.name.charAt(0).toUpperCase()}
+                                        {recipient.name ? recipient.name.charAt(0).toUpperCase() : '?'}
                                     </Text>
                                 </View>
                             )}
