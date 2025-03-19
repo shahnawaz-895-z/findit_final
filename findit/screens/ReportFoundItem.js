@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_CONFIG from '../config';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 const ACTIVITY_STORAGE_KEY = 'user_activities'; // Same key as in Homepage.js
@@ -24,7 +25,7 @@ const ReportFoundItem = () => {
   const [description, setDescription] = useState('');
   const [time, setTime] = useState(new Date());
   const [date, setDate] = useState(new Date());
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState('Electronics');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [geolocation, setGeolocation] = useState(null);
@@ -45,10 +46,7 @@ const ReportFoundItem = () => {
 
   const BACKEND_URL = API_CONFIG.API_URL; // Using centralized config
   const HUGGING_FACE_API_KEY = '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';
-<<<<<<< HEAD
 
-=======
->>>>>>> 2667e39b0ddcda8361b553bb8deac86406436472
   useEffect(() => {
     const getLocationPermission = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
