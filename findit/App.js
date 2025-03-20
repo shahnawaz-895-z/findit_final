@@ -13,14 +13,13 @@ import ShowFoundItemData from './screens/ShowFoundItemData';
 import ProfileScreen from './screens/ProfileScreen';
 import ChatScreen from './screens/ChatScreen.js';
 import ChatListScreen from './screens/ChatListScreen.js';
-import MatchesScreen from './screens/MatchesScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
-import MatchDetailsScreen from './screens/MatchDetailsScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import ActivityListScreen from './screens/ActivityListScreen';
 import TipsScreen from './screens/TipsScreen';
 import HelpScreen from './screens/HelpScreen';
 import TestNotification from './screens/TestNotification';
+import ViewMatchesScreen from './screens/ViewMatchesScreen';
 
 const Stack = createStackNavigator();
 
@@ -70,9 +69,7 @@ export default function App() {
           />
           <Stack.Screen name="ChatScreen" component={ChatScreen} />
           <Stack.Screen name="ChatListScreen" component={ChatListScreen} />
-          <Stack.Screen name="MatchesScreen" component={MatchesScreen} />
           <Stack.Screen name="NotificationsScreen" component={NotificationsScreen} />
-          <Stack.Screen name="MatchDetailsScreen" component={MatchDetailsScreen} />
           <Stack.Screen name="DashboardScreen" component={DashboardScreen} />
           <Stack.Screen name="ActivityListScreen" component={ActivityListScreen} />
           <Stack.Screen name="TipsScreen" component={TipsScreen} />
@@ -82,6 +79,17 @@ export default function App() {
             component={TestNotification}
             options={{
                 title: 'Test Notifications',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+            }}
+          />
+          <Stack.Screen 
+            name="ViewMatches" 
+            component={ViewMatchesScreen}
+            options={{
+                title: 'View Matches',
                 headerStyle: {
                     backgroundColor: '#3d0c45',
                 },

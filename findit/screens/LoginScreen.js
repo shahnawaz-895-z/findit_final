@@ -38,8 +38,11 @@ const LoginScreen = ({ navigation }) => {
         // Try to parse the response as JSON
         const data = await response.json();
 
-        if (data.user) {
+        if (data.user && data.token) {
+            // Store both user data and token
             await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+            await AsyncStorage.setItem('authToken', data.token);
+            
             navigation.reset({
                 index: 0,
                 routes: [{ name: 'HomePage' }],
@@ -52,7 +55,8 @@ const LoginScreen = ({ navigation }) => {
     } finally {
         setIsLoading(false);
     }
-};
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign in</Text>

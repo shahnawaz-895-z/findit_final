@@ -104,23 +104,12 @@ const foundItemSchema = new mongoose.Schema({
     type: Map,
     of: String,
     default: {}
-  },
-  
-  _embedding: {
-    type: mongoose.Schema.Types.Mixed,
-    required: false,
-    select: false // Don't include in normal queries
   }
 }, { timestamps: true });
 
 // Create indexes for efficient querying
-foundItemSchema.index({ description: 'text' });
-foundItemSchema.index({ brand: 1 });
-foundItemSchema.index({ model: 1 });
 foundItemSchema.index({ category: 1 });
 foundItemSchema.index({ createdAt: -1 });
-foundItemSchema.index({ documentType: 1 });
-foundItemSchema.index({ material: 1 });
 
 const FoundItem = mongoose.model('FoundItem', foundItemSchema);
 

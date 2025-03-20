@@ -232,26 +232,6 @@ const DashboardScreen = ({ navigation }) => {
                 </View>
                 <Text style={styles.actionText}>Report Found</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('MatchesScreen')}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: '#9d5ca3' }]}>
-                  <Icon name="git-compare-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.actionText}>View Matches</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('ActivityListScreen')}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: '#d3afd7' }]}>
-                  <Icon name="list-outline" size={24} color="#fff" />
-                </View>
-                <Text style={styles.actionText}>Activity</Text>
-              </TouchableOpacity>
             </View>
           </View>
           

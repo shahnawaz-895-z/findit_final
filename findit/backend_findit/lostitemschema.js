@@ -106,12 +106,6 @@ const lostItemSchema = new mongoose.Schema({
     of: String,
     default: {}
   },
-  
-  _embedding: {
-    type: mongoose.Schema.Types.Mixed,
-    required: false,
-    select: false // Don't include in normal queries
-  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -119,13 +113,8 @@ const lostItemSchema = new mongoose.Schema({
 });
 
 // Create indexes for efficient querying
-lostItemSchema.index({ description: 'text' });
-lostItemSchema.index({ brand: 1 });
-lostItemSchema.index({ model: 1 });
 lostItemSchema.index({ category: 1 });
 lostItemSchema.index({ createdAt: -1 });
-lostItemSchema.index({ documentType: 1 });
-lostItemSchema.index({ material: 1 });
 
 const LostItem = mongoose.model('LostItem', lostItemSchema);
 export default LostItem;

@@ -5,7 +5,7 @@
 // API Configuration
 const API_CONFIG = {
   // Server IP address and port
-  IP_ADDRESS: '192.168.18.18',
+  IP_ADDRESS: '192.168.18.23',
   PORT: '5000',
   
   // Full URLs for different endpoints
