@@ -607,45 +607,45 @@ const HomePage = ({ navigation }) => {
         {/* Quick Actions */}
         <View style={styles.quickActionsContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={handleReportLostItem}
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity 
+              style={styles.quickActionItem}
+              onPress={() => navigation.navigate('ReportLostItem')}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: '#3d0c45' }]}>
-                <Icon name="search-outline" size={24} color="#fff" />
+              <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
+                <Icon name="search-outline" size={24} color="#3d0c45" />
               </View>
               <Text style={styles.quickActionText}>Report Lost</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={handleReportFoundItem}
+
+            <TouchableOpacity 
+              style={styles.quickActionItem}
+              onPress={() => navigation.navigate('ReportFoundItem')}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: '#6b2d72' }]}>
-                <Icon name="add-circle-outline" size={24} color="#fff" />
+              <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
+                <Icon name="checkmark-circle-outline" size={24} color="#3d0c45" />
               </View>
               <Text style={styles.quickActionText}>Report Found</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={() => navigation.navigate('MatchesScreen')}
+
+            <TouchableOpacity 
+              style={styles.quickActionItem}
+              onPress={() => navigation.navigate('ViewMatches')}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: '#9d5ca3' }]}>
-                <Icon name="git-compare-outline" size={24} color="#fff" />
+              <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
+                <Icon name="git-compare-outline" size={24} color="#3d0c45" />
               </View>
               <Text style={styles.quickActionText}>View Matches</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.quickActionButton}
-              onPress={() => navigation.navigate('TestNotification')}
+
+            <TouchableOpacity 
+              style={styles.quickActionItem}
+              onPress={() => navigation.navigate('ChatListScreen')}
             >
-              <View style={[styles.quickActionIcon, { backgroundColor: '#d3afd7' }]}>
-                <Icon name="notifications-outline" size={24} color="#fff" />
+              <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
+                <Icon name="chatbubble-ellipses-outline" size={24} color="#3d0c45" />
               </View>
-              <Text style={styles.quickActionText}>Test Notifications</Text>
+              <Text style={styles.quickActionText}>Messages</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -916,12 +916,12 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
   },
-  quickActions: {
+  quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  quickActionButton: {
+  quickActionItem: {
     width: '48%',
     backgroundColor: '#fff',
     borderRadius: 12,

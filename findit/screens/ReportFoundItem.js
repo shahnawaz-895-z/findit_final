@@ -350,248 +350,144 @@ const ReportFoundItem = () => {
   };
 
   const handleSubmit = async () => {
-    // Validation
-    if (!contact) {
-      Alert.alert('Error', 'Please provide contact information.');
-      return;
-    }
-    if (!location) {
-      Alert.alert('Error', 'Please provide the location.');
-      return;
-    }
-    if (!time) {
-      Alert.alert('Error', 'Please select a time.');
-      return;
-    }
-    if (!date) {
-      Alert.alert('Error', 'Please select a date.');
-      return;
-    }
-    if (!category) {
-      Alert.alert('Error', 'Please select a category.');
-      return;
-    }
-    if (!description) {
-      Alert.alert('Error', 'Please provide a description.');
-      return;
-    }
-    if (!itemName) {
-      Alert.alert('Error', 'Please provide an item name.');
-      return;
-    }
-
-    setIsLoading(true);
-
     try {
-      // Get user ID from AsyncStorage
-      const userData = await AsyncStorage.getItem('userData');
-      let userId = null;
-      
-      if (userData) {
-        const parsedUserData = JSON.parse(userData);
-        userId = parsedUserData._id;
-      }
+        // Validate required fields
+        if (!contact) {
+            Alert.alert('Error', 'Please enter your contact information');
+            return;
+        }
+        if (!location) {
+            Alert.alert('Error', 'Please enter the location where you found the item');
+            return;
+        }
+        if (!category) {
+            Alert.alert('Error', 'Please select a category');
+            return;
+        }
+        if (!description) {
+            Alert.alert('Error', 'Please provide a description');
+            return;
+        }
+        if (!itemName) {
+            Alert.alert('Error', 'Please enter the item name');
+            return;
+        }
 
-      // Create the request body
-      const formData = new FormData();
-      formData.append('contact', contact);
-      formData.append('category', category);
-      formData.append('location', location);
-      formData.append('description', description);
-      formData.append('time', time.toISOString());
-      formData.append('date', date.toISOString());
-      formData.append('itemName', itemName);
-      
-      // Add category-specific attributes
-      if (category === 'Electronics') {
-        if (brand) formData.append('brand', brand);
-        if (model) formData.append('model', model);
-        if (color) formData.append('color', color);
-        if (serialNumber) formData.append('serialNumber', serialNumber);
-      } else if (category === 'Accessories') {
-        if (brand) formData.append('brand', brand);
-        if (material) formData.append('material', material);
-        if (color) formData.append('color', color);
-      } else if (category === 'Clothing') {
-        if (brand) formData.append('brand', brand);
-        if (size) formData.append('size', size);
-        if (color) formData.append('color', color);
-        if (material) formData.append('material', material);
-      } else if (category === 'Documents') {
-        if (documentType) formData.append('documentType', documentType);
-        if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
-        if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
-      } else {
-        // Others category - add any general attributes
-        if (color) formData.append('color', color);
-        if (brand) formData.append('brand', brand);
-      }
-      
-      // Add user ID if available
-      if (userId) {
+        // Get user ID and auth token
+        const userData = await AsyncStorage.getItem('userData');
+        const authToken = await AsyncStorage.getItem('authToken');
+        
+        if (!userData || !authToken) {
+            Alert.alert('Error', 'Please log in to report a found item');
+            navigation.navigate('Login');
+            return;
+        }
+
+        const { _id: userId } = JSON.parse(userData);
+
+        // Create FormData object
+        const formData = new FormData();
         formData.append('userId', userId);
-      }
-      
-      // Add coordinates if available
-      if (selectedLocation) {
-        formData.append('latitude', selectedLocation.latitude);
-        formData.append('longitude', selectedLocation.longitude);
-      }
+        formData.append('contact', contact);
+        formData.append('location', location);
+        formData.append('category', category);
+        formData.append('description', description);
+        formData.append('itemName', itemName);
+        formData.append('time', new Date().toLocaleTimeString());
+        formData.append('date', new Date().toISOString().split('T')[0]);
 
-      // Process photo if available
-      if (photo) {
-        // Check image size and compress if needed
-        const fileInfo = await FileSystem.getInfoAsync(photo);
-        let photoToUpload = photo;
-        
-        // If image is too large (> 2MB), compress it
-        if (fileInfo.size > 2 * 1024 * 1024) {
-          try {
-            const result = await ImageManipulator.manipulateAsync(
-              photo,
-              [{ resize: { width: 1200 } }], // Resize to reasonable width while maintaining aspect ratio
-              { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-            );
-            photoToUpload = result.uri;
-            console.log('Photo compressed for upload');
-          } catch (compressionError) {
-            console.error('Error compressing photo for upload:', compressionError);
-            // Continue with original photo if compression fails
-          }
+        // Add coordinates if available
+        if (selectedLocation) {
+            formData.append('latitude', selectedLocation.latitude.toString());
+            formData.append('longitude', selectedLocation.longitude.toString());
         }
-        
-        // Fix URI for Android
-        let photoUri = photoToUpload;
-        if (Platform.OS === 'android' && !photoToUpload.startsWith('file://')) {
-          photoUri = `file://${photoToUpload}`;
-        }
-        
-        formData.append('photo', {
-          uri: photoUri,
-          type: 'image/jpeg',
-          name: 'photo.jpg',
-        });
-      }
 
-      // Add to recent activity
-      await addToRecentActivity();
-
-      // Send the data to the backend
-      const response = await axios.post(`${BACKEND_URL}/reportfound`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      if (response.data.status === 'success') {
-        // Check if there are potential matches
-        const matches = response.data.matches || [];
-        
-        if (matches.length > 0) {
-          // Show success message with matches information
-          Alert.alert(
-            'Success!',
-            `Your found item has been reported successfully. We found ${matches.length} potential matches!`,
-            [
-              {
-                text: 'View Matches',
-                onPress: () => {
-                  // Reset form
-                  setContact('');
-                  setLocation('');
-                  setPhoto(null);
-                  setDescription('');
-                  setTime(new Date());
-                  setDate(new Date());
-                  setCategory('');
-                  setItemName('');
-                  setBrand('');
-                  setModel('');
-                  setColor('');
-                  setSize('');
-                  setMaterial('');
-                  setSerialNumber('');
-                  setDocumentType('');
-                  setIssuingAuthority('');
-                  setNameOnDocument('');
-                  
-                  // Navigate to matches screen with the matches data
-                  navigation.navigate('MatchesScreen', {
-                    matches: matches,
-                    foundItemId: response.data.itemId,
-                    foundItemDescription: description
-                  });
-                },
-              },
-              {
-                text: 'Later',
-                onPress: () => {
-                  // Reset form
-                  setContact('');
-                  setLocation('');
-                  setPhoto(null);
-                  setDescription('');
-                  setTime(new Date());
-                  setDate(new Date());
-                  setCategory('');
-                  setItemName('');
-                  setBrand('');
-                  setModel('');
-                  setColor('');
-                  setSize('');
-                  setMaterial('');
-                  setSerialNumber('');
-                  setDocumentType('');
-                  setIssuingAuthority('');
-                  setNameOnDocument('');
-                  // Navigate back to home
-                  navigation.navigate('HomePage');
-                },
-              },
-            ]
-          );
+        // Add category-specific attributes
+        if (category === 'Electronics') {
+            if (brand) formData.append('brand', brand);
+            if (model) formData.append('model', model);
+            if (color) formData.append('color', color);
+            if (serialNumber) formData.append('serialNumber', serialNumber);
+        } else if (category === 'Accessories') {
+            if (brand) formData.append('brand', brand);
+            if (material) formData.append('material', material);
+            if (color) formData.append('color', color);
+        } else if (category === 'Clothing') {
+            if (brand) formData.append('brand', brand);
+            if (size) formData.append('size', size);
+            if (color) formData.append('color', color);
+            if (material) formData.append('material', material);
+        } else if (category === 'Documents') {
+            if (documentType) formData.append('documentType', documentType);
+            if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
+            if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
         } else {
-          // Show standard success message
-          Alert.alert(
-            'Success!',
-            'Your found item has been reported successfully. Thank you for helping someone find their lost item!',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  // Reset form
-                  setContact('');
-                  setLocation('');
-                  setPhoto(null);
-                  setDescription('');
-                  setTime(new Date());
-                  setDate(new Date());
-                  setCategory('');
-                  setItemName('');
-                  setBrand('');
-                  setModel('');
-                  setColor('');
-                  setSize('');
-                  setMaterial('');
-                  setSerialNumber('');
-                  setDocumentType('');
-                  setIssuingAuthority('');
-                  setNameOnDocument('');
-                  // Navigate back to home
-                  navigation.navigate('HomePage');
-                },
-              },
-            ]
-          );
+            // Others category - add any general attributes
+            if (color) formData.append('color', color);
+            if (brand) formData.append('brand', brand);
         }
-      } else {
-        Alert.alert('Error', 'Failed to report found item. Please try again.');
-      }
+
+        // Handle photo upload
+        if (photo) {
+            // The photo object is already a URI string from the image picker
+            const photoUri = Platform.OS === 'android' ? photo : photo.replace('file://', '');
+            const photoName = photoUri.split('/').pop();
+            const photoType = 'image/jpeg';
+
+            // Check if photo needs compression
+            const fileInfo = await FileSystem.getInfoAsync(photoUri);
+            if (fileInfo.size > 5 * 1024 * 1024) {
+                const compressedPhoto = await ImageManipulator.manipulateAsync(
+                    photoUri,
+                    [{ resize: { width: 1024 } }],
+                    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+                );
+                formData.append('photo', {
+                    uri: compressedPhoto.uri,
+                    type: photoType,
+                    name: photoName
+                });
+            } else {
+                formData.append('photo', {
+                    uri: photoUri,
+                    type: photoType,
+                    name: photoName
+                });
+            }
+        }
+
+        // Send data to backend
+        const response = await fetch(`${API_CONFIG.API_URL}/reportfound`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to report found item');
+        }
+
+        Alert.alert(
+            'Success',
+            'Found item reported successfully!',
+            [
+                {
+                    text: 'OK',
+                    onPress: () => navigation.goBack()
+                }
+            ]
+        );
     } catch (error) {
-      console.error('Error submitting found item:', error);
-      Alert.alert('Error', 'Failed to submit found item report. Please try again.');
-    } finally {
-      setIsLoading(false);
+        console.error('Error reporting found item:', error);
+        Alert.alert(
+            'Error',
+            error.message || 'Failed to report found item. Please try again.'
+        );
     }
   };
 

@@ -304,10 +304,17 @@ const ReportLostItem = () => {
     setIsLoading(true);
 
     try {
-      // Get user ID from AsyncStorage
+      // Get user ID and auth token from AsyncStorage
       const userData = await AsyncStorage.getItem('userData');
-      let userId = null;
+      const authToken = await AsyncStorage.getItem('authToken');
       
+      if (!authToken) {
+        Alert.alert('Error', 'Please log in to submit a report.');
+        navigation.navigate('Login');
+        return;
+      }
+
+      let userId = null;
       if (userData) {
         const parsedUserData = JSON.parse(userData);
         userId = parsedUserData._id;
@@ -315,6 +322,8 @@ const ReportLostItem = () => {
 
       // Create the request body
       const formData = new FormData();
+      
+      // Add required fields first
       formData.append('contact', contact);
       formData.append('category', category);
       formData.append('location', location);
@@ -397,11 +406,31 @@ const ReportLostItem = () => {
       // Add to recent activity
       await addToRecentActivity();
 
+      // Create headers with authorization token
+      const headers = {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${authToken}`
+      };
+
+      // Log the form data for debugging
+      console.log('Submitting form data:', {
+        contact,
+        category,
+        location,
+        description,
+        itemName,
+        uniquePoint,
+        time: time.toISOString(),
+        date: date.toISOString(),
+        userId,
+        hasPhoto: !!photo,
+        hasAuthToken: !!authToken
+      });
+
       // Send the data to the backend
       const response = await axios.post(`${BACKEND_URL}/reportlost`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: headers,
+        timeout: 30000, // 30 second timeout
       });
 
       if (response.data.status === 'success') {
@@ -443,7 +472,22 @@ const ReportLostItem = () => {
       }
     } catch (error) {
       console.error('Error submitting lost item:', error);
-      Alert.alert('Error', 'Failed to submit lost item report. Please try again.');
+      // Show detailed error message
+      let errorMessage = 'Failed to submit lost item report. ';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        errorMessage += `Server error: ${error.response.status} - ${error.response.data?.message || 'Unknown error'}`;
+      } else if (error.request) {
+        // The request was made but no response was received
+        errorMessage += 'No response received from server. Please check your internet connection.';
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        errorMessage += error.message;
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -601,7 +645,6 @@ const ReportLostItem = () => {
     setDocumentType('');
     setIssuingAuthority('');
     setNameOnDocument('');
-    setUniquePoint('');
   };
 
   // Handler for category change
@@ -645,16 +688,6 @@ const ReportLostItem = () => {
                 value={color}
                 onChangeText={setColor}
                 placeholder="e.g., Silver, Black, Blue"
-              />
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Unique Point (Required)</Text>
-              <TextInput
-                style={styles.input}
-                value={uniquePoint}
-                onChangeText={setUniquePoint}
-                placeholder="Enter a unique detail only you would know"
               />
             </View>
           </View>
@@ -1012,6 +1045,21 @@ const ReportLostItem = () => {
             </View>
           </SafeAreaView>
         </Modal>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Unique Point (Required):</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="finger-print-outline" size={24} color="#3d0c45" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter a unique detail only you would know"
+              value={uniquePoint}
+              onChangeText={setUniquePoint}
+              multiline
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Upload Photo:</Text>
