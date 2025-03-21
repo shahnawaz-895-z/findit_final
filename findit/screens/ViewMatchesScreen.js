@@ -32,7 +32,7 @@ const ViewMatchesScreen = ({ navigation }) => {
             const userData = await AsyncStorage.getItem('userData');
             console.log('Current user:', userData ? JSON.parse(userData)._id : 'unknown');
 
-            const response = await fetch(`${API_CONFIG.API_URL}/matches`, {
+            const response = await fetch(`${API_CONFIG.API_URL}/user-matches`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
