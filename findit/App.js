@@ -20,6 +20,7 @@ import TipsScreen from './screens/TipsScreen';
 import HelpScreen from './screens/HelpScreen';
 import TestNotification from './screens/TestNotification';
 import ViewMatchesScreen from './screens/ViewMatchesScreen';
+import MatchDetailsScreen from './screens/MatchDetailsScreen';
 
 const Stack = createStackNavigator();
 
@@ -94,6 +95,18 @@ export default function App() {
                     backgroundColor: '#3d0c45',
                 },
                 headerTintColor: '#fff',
+            }}
+          />
+          <Stack.Screen 
+            name="MatchDetailsScreen" 
+            component={MatchDetailsScreen}
+            options={{
+                title: 'Match Details',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+                headerShown: true,
             }}
           />
         </Stack.Navigator>

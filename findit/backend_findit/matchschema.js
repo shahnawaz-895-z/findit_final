@@ -1,64 +1,31 @@
 import mongoose from 'mongoose';
 
 const matchSchema = new mongoose.Schema({
-    lostItemId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'LostItem',
-        required: true
-    },
-    foundItemId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'FoundItem',
-        required: true
-    },
-    lostItemOwner: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-    foundItemOwner: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-    status: {
+    senderId: {
         type: String,
-        enum: ['pending', 'matched', 'returned', 'claimed', 'unclaimed'],
-        default: 'pending'
+        required: true
     },
-    matchConfidence: {
-        type: Number,
-        required: true,
-        min: 0,
-        max: 100
+    receiverId: {
+        type: String,
+        required: true
     },
-    matchDetails: {
-        stringSimilarity: Number,
-        tfidfScore: Number,
-        featureScore: Number,
-        attributeScore: Number
+    text: {
+        type: String,
+        required: true
     },
     createdAt: {
         type: Date,
         default: Date.now
     },
-    updatedAt: {
-        type: Date,
-        default: Date.now
+    read: {
+        type: Boolean,
+        default: false
     }
 });
 
-// Update the updatedAt timestamp before saving
-matchSchema.pre('save', function(next) {
-    this.updatedAt = new Date();
-    next();
-});
-
-// Create indexes for efficient querying
-matchSchema.index({ lostItemOwner: 1, createdAt: -1 });
-matchSchema.index({ foundItemOwner: 1, createdAt: -1 });
-matchSchema.index({ status: 1 });
+// Create a compound index for efficient querying of matches
+matchSchema.index({ senderId: 1, receiverId: 1 });
 
 const Match = mongoose.model('Match', matchSchema);
 
-export default Match; 
+export default Match;

@@ -11,8 +11,7 @@ import {
     SafeAreaView,
     ActivityIndicator,
     Alert,
-    RefreshControl,
-    Platform
+    RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,44 +21,11 @@ import API_CONFIG from '../config';
 
 // Get screen dimensions and handle orientation changes
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const API_URL = API_CONFIG.API_URL;
 
 // Calculate responsive sizes
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
 const normalize = (size) => Math.round(size * scale);
 
-// Get status bar height
-const STATUSBAR_HEIGHT = Platform.OS === 'ios' 
-  ? 44 
-  : StatusBar.currentHeight || 0;
-
-// Fallback data in case API fails
-const FALLBACK_CHAT_DATA = [
-    {
-        id: '1',
-        name: 'UWS Pakistan - Scottish Campuses',
-        lastMessage: 'Hi, ! Please let us know how we...',
-        time: '12:10 AM',
-        avatar: null,
-        unread: false
-    },
-    {
-        id: '2',
-        name: 'Abdul Hanan',
-        lastMessage: 'You can now message and call each...',
-        time: 'Sun',
-        avatar: null,
-        unread: false
-    },
-    {
-        id: '3',
-        name: 'dj bulb',
-        lastMessage: 'Isnay nakli baal lagain hai...',
-        time: 'Feb 20',
-        avatar: null,
-        unread: false
-    },
-];
 
 const ChatListScreen = ({ navigation }) => {
     const [chats, setChats] = useState([]);
@@ -107,9 +73,9 @@ const ChatListScreen = ({ navigation }) => {
             if (!isRefreshing) {
                 setLoading(true);
             }
-            console.log(`Making API request to: ${API_URL}/api/messages/${userId}`);
+            console.log(`Making API request to: ${API_CONFIG.API_URL}/api/messages/${userId}`);
             
-            const response = await axios.get(`${API_URL}/api/messages/${userId}`);
+            const response = await axios.get(`${API_CONFIG.API_URL}/api/messages/${userId}`);
             console.log('API response:', response.data);
             
             if (response.data && Array.isArray(response.data)) {
@@ -191,9 +157,11 @@ const ChatListScreen = ({ navigation }) => {
                 onPress={() => {
                     console.log('Navigating to chat with user:', item.id);
                     navigation.navigate('ChatScreen', { 
-                        recipientId: item.id,
-                        recipientName: item.name,
-                        recipientAvatar: avatarUri
+                        user: {
+                            id: item.id,
+                            name: item.name,
+                            avatar: avatarUri
+                        } 
                     });
                 }}
             >
@@ -207,7 +175,7 @@ const ChatListScreen = ({ navigation }) => {
                 ) : (
                     <View style={styles.placeholderAvatar}>
                         <Text style={styles.avatarText}>
-                            {item.name ? item.name.charAt(0).toUpperCase() : '?'}
+                            {item.name.charAt(0).toUpperCase()}
                         </Text>
                     </View>
                 )}
@@ -218,20 +186,20 @@ const ChatListScreen = ({ navigation }) => {
                         <Text style={styles.chatName} numberOfLines={1}>
                             {item.name}
                         </Text>
-                        <Text style={styles.chatTime}>{item.time}</Text>
+                        <Text style={styles.chatTime}>
+                            {item.time}
+                        </Text>
                     </View>
-                    <Text style={[
-                        styles.lastMessage, 
-                        item.unread && styles.unreadMessage
-                    ]} numberOfLines={1}>
+                    <Text 
+                        style={[
+                            styles.lastMessage, 
+                            item.unread && styles.unreadMessage
+                        ]}
+                        numberOfLines={1}
+                    >
                         {item.lastMessage}
                     </Text>
                 </View>
-                
-                {/* Unread indicator */}
-                {item.unread && (
-                    <View style={styles.unreadIndicator} />
-                )}
             </TouchableOpacity>
         );
     };
@@ -241,17 +209,14 @@ const ChatListScreen = ({ navigation }) => {
             <Ionicons name="chatbubble-ellipses-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No conversations yet</Text>
             <Text style={styles.emptySubText}>
-                Your conversations will appear here when you have matches
+                Your conversations will appear here
             </Text>
         </View>
     );
 
     return (
-        <View style={styles.container}>
-            {/* Status Bar */}
-            <View style={styles.statusBar}>
-                <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
-            </View>
+        <SafeAreaView style={styles.container}>
+            <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
             
             {/* Header */}
             <View style={styles.header}>
@@ -261,7 +226,7 @@ const ChatListScreen = ({ navigation }) => {
                         style={styles.headerButton}
                         onPress={onRefresh}
                     >
-                        <Ionicons name="refresh" size={normalize(24)} color="#fff" />
+                        <Ionicons name="refresh" size={normalize(24)} color="#3b0b40" />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -299,7 +264,7 @@ const ChatListScreen = ({ navigation }) => {
                     }
                 />
             )}
-        </View>
+        </SafeAreaView>
     );
 };
 
@@ -308,17 +273,15 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fff',
     },
-    statusBar: {
-        height: STATUSBAR_HEIGHT,
-        backgroundColor: '#3b0b40',
-    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: normalize(16),
-        paddingVertical: normalize(16),
-        backgroundColor: '#3b0b40',
+        paddingVertical: normalize(12),
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
@@ -328,7 +291,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: normalize(20),
         fontWeight: 'bold',
-        color: '#fff',
+        color: '#3b0b40',
     },
     headerButtons: {
         flexDirection: 'row',
@@ -431,13 +394,6 @@ const styles = StyleSheet.create({
         color: '#999',
         marginTop: normalize(8),
         textAlign: 'center',
-    },
-    unreadIndicator: {
-        width: normalize(10),
-        height: normalize(10),
-        borderRadius: normalize(5),
-        backgroundColor: '#000',
-        marginLeft: normalize(8),
     },
 });
 
