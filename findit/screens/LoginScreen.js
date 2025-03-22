@@ -12,8 +12,21 @@ const LoginScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-        Alert.alert('Error', 'Please enter both email and password');
+    // Basic validation
+    if (!email.trim()) {
+        Alert.alert('Error', 'Please enter your email');
+        return;
+    }
+    
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+        Alert.alert('Error', 'Please enter a valid email address');
+        return;
+    }
+    
+    if (!password) {
+        Alert.alert('Error', 'Please enter your password');
         return;
     }
 
@@ -24,7 +37,7 @@ const LoginScreen = ({ navigation }) => {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email: email.trim(), password }),
         });
 
         // First check if response is ok
@@ -32,7 +45,12 @@ const LoginScreen = ({ navigation }) => {
             const errorData = await response.json().catch(() => ({
                 message: 'An error occurred during login'
             }));
-            throw new Error(errorData.message || 'Login failed');
+            
+            if (response.status === 401) {
+                throw new Error('Invalid email or password');
+            } else {
+                throw new Error(errorData.message || 'Login failed');
+            }
         }
 
         // Try to parse the response as JSON
@@ -100,11 +118,6 @@ const LoginScreen = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
           <Text style={styles.signupLink}>Sign Up</Text>
         </TouchableOpacity>
-      </View>
-      <View style={styles.socialIconsContainer}>
-        <Icon name="logo-facebook" size={35} color="blue" style={styles.socialIcon} />
-        <Icon name="logo-twitter" size={35} color="#1DA1F2" style={styles.socialIcon} />
-        <Icon name="logo-google" size={35} color="red" style={styles.socialIcon} />
       </View>
     </View>
   );
@@ -175,14 +188,6 @@ const styles = StyleSheet.create({
     color: '#3b0b40',
     marginLeft: 5,
     fontWeight: 'bold',
-  },
-  socialIconsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  socialIcon: {
-    marginHorizontal: 10,
   },
 });
 

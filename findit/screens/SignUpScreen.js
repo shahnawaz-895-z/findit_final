@@ -76,22 +76,76 @@ const SignUpScreen = ({ navigation }) => {
             setIsFormSubmitted(true);
             
             // Validate inputs
-            if (!name || !email || !contact || !password || !confirmPassword) {
-                Alert.alert('Error', 'All fields are required');
+            if (!name.trim()) {
+                Alert.alert('Error', 'Please enter your name');
                 setIsUploading(false);
                 setIsFormSubmitted(false);
                 return;
             }
             
-            if (!profileImage) {
-                Alert.alert('Error', 'Please select a profile image');
+            if (!email.trim()) {
+                Alert.alert('Error', 'Please enter your email');
                 setIsUploading(false);
                 setIsFormSubmitted(false);
                 return;
             }
-    
+            
+            // Email format validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email.trim())) {
+                Alert.alert('Error', 'Please enter a valid email address');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+            
+            if (!contact.trim()) {
+                Alert.alert('Error', 'Please enter your contact number');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+            
+            // Phone number validation - allow only digits and some special characters
+            const phoneRegex = /^[+]?[\d\s-]{10,15}$/;
+            if (!phoneRegex.test(contact.trim())) {
+                Alert.alert('Error', 'Please enter a valid phone number');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+            
+            if (!password) {
+                Alert.alert('Error', 'Please enter your password');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+            
+            // Password strength validation
+            if (password.length < 8) {
+                Alert.alert('Error', 'Password must be at least 8 characters long');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+            
+            if (!confirmPassword) {
+                Alert.alert('Error', 'Please confirm your password');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+
             if (password !== confirmPassword) {
                 Alert.alert('Error', 'Passwords do not match');
+                setIsUploading(false);
+                setIsFormSubmitted(false);
+                return;
+            }
+
+            if (!profileImage) {
+                Alert.alert('Error', 'Please select a profile image');
                 setIsUploading(false);
                 setIsFormSubmitted(false);
                 return;

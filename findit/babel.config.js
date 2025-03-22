@@ -3,21 +3,19 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
+      ['@babel/plugin-transform-runtime', {
+        helpers: true,
+        regenerator: true
+      }],
       [
         'module:react-native-dotenv',
         {
           moduleName: '@env',
           path: '.env',
           blacklist: null,
-          whitelist: [
-            'API_HOST',
-            'API_PORT',
-            'BACKUP_API_HOST',
-            'BACKUP_PORT',
-            'POLLING_INTERVAL'
-          ],
-          safe: false,
-          allowUndefined: true,
+          whitelist: null,
+          safe: true,
+          allowUndefined: false,
         },
       ],
       'react-native-reanimated/plugin',

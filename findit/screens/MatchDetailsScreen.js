@@ -108,9 +108,9 @@ const MatchDetailsScreen = ({ route, navigation }) => {
                 <View style={styles.matchScore}>
                     <Text style={styles.matchScoreText}>Match Confidence</Text>
                     <View style={styles.scoreBar}>
-                        <View style={[styles.scoreFill, { width: `${match.matchConfidence}%` }]} />
+                        <View style={[styles.scoreFill, { width: `${match.matchConfidence || 60}%` }]} />
                     </View>
-                    <Text style={styles.scorePercentage}>{match.matchConfidence}%</Text>
+                    <Text style={styles.scorePercentage}>{match.matchConfidence || 60}%</Text>
                 </View>
             </View>
 
