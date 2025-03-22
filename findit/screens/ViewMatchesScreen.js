@@ -155,12 +155,12 @@ const ViewMatchesScreen = ({ navigation }) => {
                         <View 
                             style={[
                                 styles.scoreFill, 
-                                { width: `${item.matchConfidence}%` }
+                                { width: `${item.matchConfidence || 60}%` }
                             ]} 
                         />
                     </View>
                     <Text style={styles.scoreText}>
-                        {item.matchConfidence}% Match
+                        {item.matchConfidence || 60}% Match
                     </Text>
                 </View>
             </View>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet, Alert } from 'react-native';
-import { API_URL } from '@env';
+import API_CONFIG from '../config';
 
 const ShowFoundItemData = ({ route }) => {
     const { lostItemDescription } = route.params;
@@ -11,7 +11,7 @@ const ShowFoundItemData = ({ route }) => {
     useEffect(() => {
         const fetchMatchedItems = async () => {
             try {
-                const response = await fetch(`${API_URL}/matchingfounditems`, {
+                const response = await fetch(`${API_CONFIG.API_URL}/matchingfounditems`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ lostItemDescription })

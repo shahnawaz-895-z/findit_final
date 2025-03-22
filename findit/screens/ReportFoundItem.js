@@ -32,6 +32,8 @@ const ReportFoundItem = () => {
   const [mapVisible, setMapVisible] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLocationLoading, setIsLocationLoading] = useState(false);
+  const [isImageProcessing, setIsImageProcessing] = useState(false);
   const [itemName, setItemName] = useState('');
   const [fullScreenMap, setFullScreenMap] = useState(false);
   const [brand, setBrand] = useState('');
@@ -218,7 +220,7 @@ const ReportFoundItem = () => {
       return;
     }
 
-    setIsLoading(true);
+    setIsImageProcessing(true);
     const huggingFaceUrl = 'https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base';
 
     try {
@@ -280,7 +282,7 @@ const ReportFoundItem = () => {
       console.error('Error processing image:', error);
       Alert.alert('Error', 'Failed to process the image. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsImageProcessing(false);
     }
   };
 
@@ -318,10 +320,12 @@ const ReportFoundItem = () => {
   const detectCurrentLocation = async () => {
     try {
       setIsLoading(true);
+      setIsLocationLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission denied', 'Location permission is required to proceed.');
         setIsLoading(false);
+        setIsLocationLoading(false);
         return;
       }
 
@@ -342,10 +346,12 @@ const ReportFoundItem = () => {
       setFullScreenMap(true);
       setMapVisible(true);
       setIsLoading(false);
+      setIsLocationLoading(false);
     } catch (error) {
       console.error('Error getting current location:', error);
       Alert.alert('Error', 'Failed to detect current location. Please try again.');
       setIsLoading(false);
+      setIsLocationLoading(false);
     }
   };
 
@@ -377,17 +383,36 @@ const ReportFoundItem = () => {
         const userData = await AsyncStorage.getItem('userData');
         const authToken = await AsyncStorage.getItem('authToken');
         
-        if (!userData || !authToken) {
+        if (!authToken) {
             Alert.alert('Error', 'Please log in to report a found item');
             navigation.navigate('Login');
             return;
         }
 
-        const { _id: userId } = JSON.parse(userData);
+        // Modified: Handle userData parsing more safely
+        let userId = null;
+        if (userData) {
+            try {
+                const parsedUserData = JSON.parse(userData);
+                userId = parsedUserData._id || parsedUserData.id || parsedUserData.userId;
+                console.log('User ID:', userId);
+                
+                if (!userId) {
+                    console.log('User data structure:', JSON.stringify(parsedUserData));
+                }
+            } catch (parseError) {
+                console.error('Error parsing user data:', parseError);
+            }
+        }
 
         // Create FormData object
         const formData = new FormData();
-        formData.append('userId', userId);
+        
+        // Add userId only if it's a valid string
+        if (userId && typeof userId === 'string' && userId.trim() !== '') {
+            formData.append('userId', userId);
+        }
+        
         formData.append('contact', contact);
         formData.append('location', location);
         formData.append('category', category);
@@ -457,36 +482,62 @@ const ReportFoundItem = () => {
         }
 
         // Send data to backend
-        const response = await fetch(`${API_CONFIG.API_URL}/reportfound`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'multipart/form-data',
-                'Authorization': `Bearer ${authToken}`
-            },
-            body: formData
-        });
+        try {
+            setIsLoading(true);
+            const response = await axios.post(`${API_CONFIG.API_URL}/reportfound`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                timeout: 30000 // 30 second timeout
+            });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.message || 'Failed to report found item');
+            if (response.data && response.data.status === 'success') {
+                Alert.alert(
+                    'Success',
+                    'Found item reported successfully!',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: () => navigation.goBack()
+                        }
+                    ]
+                );
+                
+                // Add to recent activity
+                await addToRecentActivity();
+            } else {
+                throw new Error('Server returned an unsuccessful status');
+            }
+        } catch (error) {
+            console.error('Error submitting found item report:', error);
+            let errorMessage = 'Failed to report found item. ';
+            
+            if (error.response) {
+                // The request was made and the server responded with a status code
+                // that falls out of the range of 2xx
+                errorMessage += `Server error: ${error.response.status}`;
+                console.log('Error response data:', error.response.data);
+            } else if (error.request) {
+                // The request was made but no response was received
+                errorMessage += 'No response received from server. Please check your internet connection.';
+            } else {
+                // Something happened in setting up the request that triggered an Error
+                errorMessage += error.message;
+            }
+            
+            Alert.alert(
+                'Error',
+                errorMessage
+            );
+        } finally {
+            setIsLoading(false);
         }
-
-        Alert.alert(
-            'Success',
-            'Found item reported successfully!',
-            [
-                {
-                    text: 'OK',
-                    onPress: () => navigation.goBack()
-                }
-            ]
-        );
     } catch (error) {
-        console.error('Error reporting found item:', error);
+        console.error('Error in form submission process:', error);
         Alert.alert(
             'Error',
-            error.message || 'Failed to report found item. Please try again.'
+            'An unexpected error occurred while submitting your report. Please try again.'
         );
     }
   };
@@ -840,17 +891,24 @@ const ReportFoundItem = () => {
             <TouchableOpacity 
               style={styles.detectLocationButton}
               onPress={detectCurrentLocation}
-              disabled={isLoading}
+              disabled={isLocationLoading || isImageProcessing}
             >
               <Ionicons name="locate" size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {isLoading && (
+        {isLocationLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#3d0c45" />
             <Text style={styles.loadingText}>Detecting location...</Text>
+          </View>
+        )}
+        
+        {isImageProcessing && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#3d0c45" />
+            <Text style={styles.loadingText}>Processing image...</Text>
           </View>
         )}
 
@@ -1011,7 +1069,7 @@ const ReportFoundItem = () => {
         <TouchableOpacity 
           style={styles.submitButton} 
           onPress={handleSubmit}
-          disabled={isLoading}
+          disabled={isLoading || isLocationLoading || isImageProcessing}
         >
           {isLoading ? (
             <ActivityIndicator size="small" color="#fff" />
