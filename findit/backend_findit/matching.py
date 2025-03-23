@@ -16,22 +16,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Flag to determine whether to use sentence transformers (can be disabled on low-resource environments)
-USE_SENTENCE_TRANSFORMERS = os.environ.get('USE_SENTENCE_TRANSFORMERS', 'false').lower() == 'true'
-
-# Try to import sentence transformers, but provide fallback if not available
-SENTENCE_TRANSFORMER_AVAILABLE = False
-if USE_SENTENCE_TRANSFORMERS:
-    try:
-        from sentence_transformers import SentenceTransformer, util
-        SENTENCE_TRANSFORMER_AVAILABLE = True
-        print("Sentence transformers available, using advanced matching")
-    except ImportError:
-        print("Sentence transformers not available, using standard matching methods")
-        SENTENCE_TRANSFORMER_AVAILABLE = False
-else:
-    print("Sentence transformers disabled by configuration")
-
 # Create nltk_data directory in backend folder
 NLTK_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nltk_data')
 os.makedirs(NLTK_DATA_DIR, exist_ok=True)
@@ -62,20 +46,6 @@ except Exception as e:
     # Fallback stopwords
     stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 
                  'in', 'on', 'at', 'to', 'for', 'with', 'by', 'of', 'from'}
-
-# Initialize sentence transformer model if available
-sentence_model = None
-if SENTENCE_TRANSFORMER_AVAILABLE:
-    try:
-        # Use a smaller, faster model that still gives good results
-        model_name = 'paraphrase-MiniLM-L6-v2'  # Good balance of speed and accuracy
-        print(f"Loading sentence transformer model: {model_name}")
-        start_time = time.time()
-        sentence_model = SentenceTransformer(model_name)
-        print(f"Model loaded in {time.time() - start_time:.2f} seconds")
-    except Exception as e:
-        print(f"Error loading sentence transformer model: {str(e)}")
-        SENTENCE_TRANSFORMER_AVAILABLE = False
 
 # Initialize vectorizers with better parameters
 try:
@@ -286,25 +256,6 @@ def matching_words_similarity(str1, str2):
     
     return (exact_matches + synonym_matches) / total_words
 
-def sentence_embedding_similarity(text1, text2):
-    """Calculate similarity using sentence embeddings with a pre-trained model."""
-    if not SENTENCE_TRANSFORMER_AVAILABLE or sentence_model is None:
-        return 0.0
-    
-    try:
-        # Get embeddings
-        embedding1 = sentence_model.encode(text1, convert_to_tensor=True)
-        embedding2 = sentence_model.encode(text2, convert_to_tensor=True)
-        
-        # Calculate cosine similarity
-        similarity = util.pytorch_cos_sim(embedding1, embedding2).item()
-        
-        # Convert to float and ensure it's between 0 and 1
-        return float(max(0.0, min(1.0, similarity)))
-    except Exception as e:
-        print(f"Error calculating sentence embedding similarity: {str(e)}")
-        return 0.0
-
 @app.route('/match', methods=['POST'])
 def match_descriptions():
     """Find similarity between lost & found item descriptions using multiple methods."""
@@ -321,10 +272,6 @@ def match_descriptions():
 
         if not lost_desc or not found_desc:
             return jsonify({"error": "Both lost and found descriptions are required"}), 400
-
-        # Store original descriptions
-        original_lost = lost_desc
-        original_found = found_desc
         
         # Preprocess descriptions
         lost_processed = preprocess_text(lost_desc)
@@ -377,22 +324,11 @@ def match_descriptions():
         methods_results['matching_words'] = matching_words_sim
         print(f"Matching words similarity: {matching_words_sim}")
         
-        # Method 5: Sentence Embedding Similarity (if available)
-        if SENTENCE_TRANSFORMER_AVAILABLE and sentence_model is not None:
-            try:
-                # Use the original text with the sentence transformer for better results
-                embed_sim = sentence_embedding_similarity(original_lost, original_found)
-                methods_results['sentence_embedding'] = embed_sim
-                print(f"Sentence embedding similarity: {embed_sim}")
-            except Exception as e:
-                print(f"Sentence embedding similarity calculation failed: {str(e)}")
-                methods_results['sentence_embedding'] = 0.0
-        
         # Use the highest similarity score from all methods
         similarity = max(methods_results.values())
         
         # Apply a small boost for multi-method agreement
-        if len([s for s in methods_results.values() if s > 0.4]) >= 3:
+        if len([s for s in methods_results.values() if s > 0.4]) >= 2:
             similarity = min(1.0, similarity + 0.05)
             agreement_boost = True
         else:
@@ -429,7 +365,6 @@ def health_check():
     return jsonify({
         "status": "ok", 
         "service": "matching-api",
-        "advanced_matching": SENTENCE_TRANSFORMER_AVAILABLE,
         "version": "2.0"
     }), 200
 
