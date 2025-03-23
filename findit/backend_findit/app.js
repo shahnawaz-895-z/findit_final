@@ -1603,6 +1603,7 @@ app.get('/api-test', (req, res) => {
 
   app.post('/api/match', async (req, res) => {
     try {
+        console.log('Match request received:', req.body);
         const { lost_desc, found_desc } = req.body;
 
         if (!lost_desc || !found_desc) {
@@ -1612,18 +1613,62 @@ app.get('/api-test', (req, res) => {
             });
         }
 
-        // Send descriptions to the Python API
-        const response = await axios.post('http://192.168.18.18:5000/match', {
+        // Try to get the Python API URL from env vars with a fallback to the direct IP
+        const pythonApiUrl = process.env.PYTHON_API_URL || 'http://localhost:5001';
+        console.log('Using Python API URL:', pythonApiUrl);
+        
+        // Send descriptions to the Python API with timeout
+        console.log('Sending request to Python API at:', pythonApiUrl);
+        const response = await axios.post(`${pythonApiUrl}/match`, {
             lost_desc,
             found_desc
+        }, {
+            timeout: 8000, // 8 second timeout
+            headers: { 'Content-Type': 'application/json' }
         });
 
-        res.json(response.data);
+        // Valid response received from Python API
+        console.log('Python API responded with:', response.data);
+        
+        // Ensure the response has a similarity_score
+        if (response.data && typeof response.data.similarity_score === 'number') {
+            res.json({
+                status: 'success',
+                ...response.data
+            });
+        } else {
+            console.error('Invalid response format from Python API:', response.data);
+            res.status(500).json({ 
+                status: 'error', 
+                message: 'Invalid response from matching service',
+                similarity_score: 0
+            });
+        }
     } catch (error) {
         console.error("Error communicating with Python API:", error.message);
+        
+        // Check if it's a timeout error
+        if (error.code === 'ECONNABORTED') {
+            return res.status(503).json({ 
+                status: 'error', 
+                message: 'Matching service timed out', 
+                similarity_score: 0
+            });
+        }
+        
+        // Check if it's a connection error
+        if (error.code === 'ECONNREFUSED') {
+            return res.status(503).json({ 
+                status: 'error', 
+                message: 'Matching service is currently unavailable',
+                similarity_score: 0
+            });
+        }
+        
         res.status(500).json({ 
             status: 'error', 
-            message: 'Matching service is currently unavailable' 
+            message: 'Matching service error: ' + error.message,
+            similarity_score: 0
         });
     }
 });
@@ -1747,34 +1792,6 @@ app.post('/api/record-match', async (req, res) => {
             status: 'error',
             message: 'Failed to record match',
             error: error.message
-        });
-    }
-});
-
-// Find matches for a specific item
-app.post('/api/match', async (req, res) => {
-    try {
-        const { lost_desc, found_desc } = req.body;
-
-        if (!lost_desc || !found_desc) {
-            return res.status(400).json({ 
-                status: 'error', 
-                message: 'Both lost and found descriptions are required' 
-            });
-        }
-
-        // Call Python API for text similarity check
-        const response = await axios.post(`${process.env.PYTHON_API_URL}/match`, {
-            lost_desc,
-            found_desc
-        });
-
-        res.json(response.data);
-    } catch (error) {
-        console.error("Error communicating with Python API:", error.message);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Matching service is currently unavailable' 
         });
     }
 });

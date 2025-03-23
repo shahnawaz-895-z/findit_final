@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
     View, 
     Text, 
@@ -7,7 +7,8 @@ import {
     TouchableOpacity, 
     ActivityIndicator,
     Alert,
-    Dimensions 
+    Dimensions,
+    RefreshControl
 } from 'react-native';
 import axios from 'axios';
 import API_CONFIG from '../config';
@@ -19,59 +20,105 @@ export default function PotentialMatchesScreen({ route, navigation }) {
     const [matches, setMatches] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        fetchPotentialMatches();
-    }, [itemId, itemType]);
-
-    const fetchPotentialMatches = async () => {
+    const fetchPotentialMatches = useCallback(async () => {
         try {
-            setIsLoading(true);
             setError(null);
+            
+            if (!itemId || !itemType) {
+                setError('Missing required item information');
+                return;
+            }
             
             const response = await axios.get(
                 `${API_CONFIG.API_URL}/api/matches/${itemId}/${itemType}`,
-                { timeout: 10000 }
+                { 
+                    timeout: 8000,
+                    headers: { 'Content-Type': 'application/json' }
+                }
             );
             
             if (response.data.status === 'success') {
-                setMatches(response.data.data.matches);
+                if (Array.isArray(response.data.data.matches)) {
+                    setMatches(response.data.data.matches);
+                } else {
+                    console.warn('Invalid matches data format:', response.data);
+                    setMatches([]);
+                }
             } else {
-                throw new Error('Failed to fetch matches');
+                throw new Error(response.data.message || 'Failed to fetch matches');
             }
         } catch (error) {
             console.error('Error fetching potential matches:', error);
-            setError('Unable to load potential matches. Please try again.');
-            Alert.alert('Error', 'Failed to load potential matches');
+            
+            if (error.response) {
+                setError(error.response.data?.message || 'Server error. Please try again.');
+            } else if (error.request) {
+                setError('Network error. Please check your connection.');
+            } else {
+                setError('Unable to load potential matches. Please try again.');
+            }
+            
+            if (!refreshing) {
+                Alert.alert('Error', 'Failed to load potential matches');
+            }
         } finally {
             setIsLoading(false);
+            setRefreshing(false);
         }
-    };
+    }, [itemId, itemType, refreshing]);
+
+    useEffect(() => {
+        setIsLoading(true);
+        fetchPotentialMatches();
+    }, [fetchPotentialMatches]);
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchPotentialMatches();
+    }, [fetchPotentialMatches]);
 
     const confirmMatch = async (matchId) => {
+        if (!matchId) {
+            Alert.alert('Error', 'Invalid match information');
+            return;
+        }
+        
         try {
             setIsLoading(true);
             
             const response = await axios.post(
                 `${API_CONFIG.API_URL}/api/confirm-match/${matchId}`,
-                { status: 'confirmed' }
+                { status: 'confirmed' },
+                { 
+                    timeout: 8000,
+                    headers: { 'Content-Type': 'application/json' }
+                }
             );
             
             if (response.data.status === 'success') {
                 Alert.alert('Success', 'Match confirmed successfully!');
                 fetchPotentialMatches(); // Refresh the list
             } else {
-                throw new Error('Failed to confirm match');
+                throw new Error(response.data.message || 'Failed to confirm match');
             }
         } catch (error) {
             console.error('Error confirming match:', error);
-            Alert.alert('Error', 'Failed to confirm match');
+            
+            const errorMsg = error.response?.data?.message || 'Failed to confirm match';
+            Alert.alert('Error', errorMsg);
         } finally {
             setIsLoading(false);
         }
     };
 
     const viewItemDetails = (item) => {
+        if (!item || !item._id) {
+            Alert.alert('Error', 'Invalid item data');
+            return;
+        }
+        
         navigation.navigate('ItemDetails', {
             item,
             itemType: itemType === 'lost' ? 'found' : 'lost'
@@ -80,6 +127,7 @@ export default function PotentialMatchesScreen({ route, navigation }) {
 
     // Determine which item to display based on the current item type
     const getMatchedItem = (match) => {
+        if (!match) return null;
         return itemType === 'lost' ? match.foundItemId : match.lostItemId;
     };
 
@@ -94,43 +142,59 @@ export default function PotentialMatchesScreen({ route, navigation }) {
             >
                 <View style={styles.matchHeader}>
                     <Text style={styles.matchTitle}>
-                        {matchedItem.itemName || `${matchedItem.category} Item`}
+                        {matchedItem.itemName || `${matchedItem.category || 'Unknown'} Item`}
                     </Text>
-                    <Text style={styles.matchScore}>
-                        {(match.similarityScore * 100).toFixed(1)}% Match
+                    <Text style={[
+                        styles.matchScore,
+                        { 
+                            color: getMatchScoreColor(match.similarityScore || 0)
+                        }
+                    ]}>
+                        {((match.similarityScore || 0) * 100).toFixed(1)}% Match
                     </Text>
                 </View>
                 
                 <Text style={styles.matchDetail}>
                     <Text style={styles.matchLabel}>Category: </Text>
-                    {matchedItem.category}
+                    {matchedItem.category || 'N/A'}
                 </Text>
                 
                 <Text style={styles.matchDetail}>
                     <Text style={styles.matchLabel}>Location: </Text>
-                    {matchedItem.location}
+                    {matchedItem.location || 'N/A'}
                 </Text>
                 
                 <Text style={styles.matchDetail}>
                     <Text style={styles.matchLabel}>Date: </Text>
-                    {new Date(matchedItem.date).toLocaleDateString()}
+                    {matchedItem.date ? new Date(matchedItem.date).toLocaleDateString() : 'N/A'}
                 </Text>
                 
                 <Text style={styles.matchDescription} numberOfLines={3}>
-                    {matchedItem.description}
+                    {matchedItem.description || 'No description available'}
                 </Text>
                 
                 <TouchableOpacity 
                     style={styles.confirmButton}
                     onPress={() => confirmMatch(match._id)}
+                    disabled={isLoading}
                 >
-                    <Text style={styles.confirmButtonText}>Confirm Match</Text>
+                    {isLoading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                        <Text style={styles.confirmButtonText}>Confirm Match</Text>
+                    )}
                 </TouchableOpacity>
             </TouchableOpacity>
         );
     };
 
-    if (isLoading) {
+    const getMatchScoreColor = (score) => {
+        if (score >= 0.7) return '#28a745';  // Green for high match
+        if (score >= 0.4) return '#ffc107';  // Yellow for moderate match
+        return '#dc3545';  // Red for low match
+    };
+
+    if (isLoading && !refreshing) {
         return (
             <View style={styles.centered}>
                 <ActivityIndicator size="large" color="#3d0c45" />
@@ -139,13 +203,16 @@ export default function PotentialMatchesScreen({ route, navigation }) {
         );
     }
 
-    if (error) {
+    if (error && !refreshing) {
         return (
             <View style={styles.centered}>
                 <Text style={styles.errorText}>{error}</Text>
                 <TouchableOpacity 
                     style={styles.retryButton}
-                    onPress={fetchPotentialMatches}
+                    onPress={() => {
+                        setIsLoading(true);
+                        fetchPotentialMatches();
+                    }}
                 >
                     <Text style={styles.retryButtonText}>Retry</Text>
                 </TouchableOpacity>
@@ -167,14 +234,34 @@ export default function PotentialMatchesScreen({ route, navigation }) {
                     <Text style={styles.noMatchesSubtext}>
                         Check back later as more items are reported.
                     </Text>
+                    <TouchableOpacity 
+                        style={styles.refreshButton}
+                        onPress={onRefresh}
+                    >
+                        <Text style={styles.refreshButtonText}>Refresh</Text>
+                    </TouchableOpacity>
                 </View>
             ) : (
                 <FlatList
                     data={matches}
-                    keyExtractor={(item) => item._id}
+                    keyExtractor={(item) => item._id || Math.random().toString()}
                     renderItem={renderMatchItem}
                     contentContainerStyle={styles.matchesList}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#3d0c45']}
+                        />
+                    }
+                    ListEmptyComponent={
+                        <View style={styles.noMatchesContainer}>
+                            <Text style={styles.noMatchesText}>
+                                No matches available.
+                            </Text>
+                        </View>
+                    }
                 />
             )}
         </View>
@@ -221,6 +308,18 @@ const styles = StyleSheet.create({
         fontSize: width * 0.04,
         fontWeight: 'bold',
     },
+    refreshButton: {
+        backgroundColor: '#3d0c45',
+        paddingVertical: height * 0.015,
+        paddingHorizontal: width * 0.08,
+        borderRadius: width * 0.02,
+        marginTop: height * 0.02,
+    },
+    refreshButtonText: {
+        color: '#fff',
+        fontSize: width * 0.04,
+        fontWeight: 'bold',
+    },
     noMatchesContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -257,6 +356,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: height * 0.01,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+        paddingBottom: height * 0.01,
     },
     matchTitle: {
         fontSize: width * 0.045,
@@ -265,38 +367,33 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     matchScore: {
-        fontSize: width * 0.035,
+        fontSize: width * 0.04,
         fontWeight: 'bold',
-        color: '#fff',
-        backgroundColor: '#3d0c45',
-        paddingHorizontal: width * 0.02,
-        paddingVertical: height * 0.005,
-        borderRadius: width * 0.015,
     },
     matchDetail: {
         fontSize: width * 0.035,
         color: '#333',
-        marginBottom: height * 0.005,
+        marginVertical: height * 0.003,
     },
     matchLabel: {
         fontWeight: 'bold',
-        color: '#3d0c45',
+        color: '#666',
     },
     matchDescription: {
         fontSize: width * 0.035,
         color: '#666',
-        marginVertical: height * 0.01,
+        marginTop: height * 0.01,
+        marginBottom: height * 0.02,
     },
     confirmButton: {
         backgroundColor: '#28a745',
-        borderRadius: width * 0.02,
         paddingVertical: height * 0.01,
+        borderRadius: width * 0.02,
         alignItems: 'center',
-        marginTop: height * 0.01,
     },
     confirmButtonText: {
         color: '#fff',
         fontWeight: 'bold',
         fontSize: width * 0.035,
-    },
+    }
 });
