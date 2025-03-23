@@ -18,8 +18,9 @@ import DashboardScreen from './screens/DashboardScreen';
 import ActivityListScreen from './screens/ActivityListScreen';
 import TipsScreen from './screens/TipsScreen';
 import HelpScreen from './screens/HelpScreen';
-import ViewMatchesScreen from './screens/ViewMatchesScreen';
-import MatchDetailsScreen from './screens/MatchDetailsScreen';
+import MatchingScreen from './screens/MatchingScreen.js';
+import MatchDetailsScreen from './screens/MatchDetailsScreen.js';
+import PotentialMatchesScreen from './screens/PotentialMatchesScreen.js';
 
 const Stack = createStackNavigator();
 
@@ -74,17 +75,8 @@ export default function App() {
           <Stack.Screen name="ActivityListScreen" component={ActivityListScreen} />
           <Stack.Screen name="TipsScreen" component={TipsScreen} />
           <Stack.Screen name="HelpScreen" component={HelpScreen} />
-          <Stack.Screen 
-            name="ViewMatches" 
-            component={ViewMatchesScreen}
-            options={{
-                title: 'View Matches',
-                headerStyle: {
-                    backgroundColor: '#3d0c45',
-                },
-                headerTintColor: '#fff',
-            }}
-          />
+          <Stack.Screen name="MatchingScreen" component={MatchingScreen} />
+          {/* Add MatchDetailsScreen to the stack */}
           <Stack.Screen 
             name="MatchDetailsScreen" 
             component={MatchDetailsScreen}
@@ -97,6 +89,18 @@ export default function App() {
                 headerShown: true,
             }}
           />
+          <Stack.Screen 
+            name="PotentialMatchesScreen" 
+            component={PotentialMatchesScreen} 
+            options={{
+                title: 'Potential Matches',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+                headerShown: true,
+            }}
+          />    
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>

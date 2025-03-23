@@ -15,6 +15,8 @@ import Message from './messageschema.js';
 import Notification from './notificationschema.js';
 import natural from 'natural';
 import jwt from 'jsonwebtoken';
+import axios from 'axios';
+import { findPotentialMatches } from './matching.js';
 
 // Load environment variables
 dotenv.config();
@@ -1598,3 +1600,181 @@ function formatMessageTime(date) {
 app.get('/api-test', (req, res) => {
     res.status(200).json({ status: 'ok', message: 'API is running' });
   });
+
+  app.post('/api/match', async (req, res) => {
+    try {
+        const { lost_desc, found_desc } = req.body;
+
+        if (!lost_desc || !found_desc) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Both lost and found descriptions are required' 
+            });
+        }
+
+        // Send descriptions to the Python API
+        const response = await axios.post('http://192.168.18.18:5000/match', {
+            lost_desc,
+            found_desc
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error("Error communicating with Python API:", error.message);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Matching service is currently unavailable' 
+        });
+    }
+});
+
+// Create a lost item report with potential matches
+app.post('/api/lost-items', async (req, res) => {
+    try {
+        const lostItem = new LostItem(req.body);
+        await lostItem.save();
+        
+        // Find potential matches with existing found items
+        const potentialMatches = await findPotentialMatches(lostItem.description, 'found');
+        
+        res.status(201).json({
+            status: 'success',
+            data: {
+                lostItem,
+                potentialMatches
+            }
+        });
+    } catch (error) {
+        console.error('Error creating lost item:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to report lost item',
+            error: error.message
+        });
+    }
+});
+
+// Create a found item report with potential matches
+app.post('/api/found-items', async (req, res) => {
+    try {
+        const foundItem = new FoundItem(req.body);
+        await foundItem.save();
+        
+        // Find potential matches with existing lost items
+        const potentialMatches = await findPotentialMatches(foundItem.description, 'lost');
+        
+        res.status(201).json({
+            status: 'success',
+            data: {
+                foundItem,
+                potentialMatches
+            }
+        });
+    } catch (error) {
+        console.error('Error creating found item:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to report found item',
+            error: error.message
+        });
+    }
+});
+
+// Match model definition
+const matchSchema = new mongoose.Schema({
+    lostItemId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'LostItem',
+        required: true
+    },
+    foundItemId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'FoundItem',
+        required: true
+    },
+    similarityScore: {
+        type: Number,
+        required: true
+    },
+    matchDate: {
+        type: Date,
+        default: Date.now
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'confirmed', 'rejected'],
+        default: 'pending'
+    }
+}, { timestamps: true });
+
+const Match = mongoose.model('Match', matchSchema);
+
+// Record a match between items
+app.post('/api/record-match', async (req, res) => {
+    try {
+        const { lostItemId, foundItemId, similarityScore } = req.body;
+
+        if (!lostItemId || !foundItemId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Both lost item ID and found item ID are required'
+            });
+        }
+
+        if (similarityScore < 0.4) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Similarity score too low to record a match'
+            });
+        }
+
+        const match = new Match({
+            lostItemId,
+            foundItemId,
+            similarityScore,
+            status: 'confirmed'
+        });
+
+        await match.save();
+
+        res.json({
+            status: 'success',
+            data: { match }
+        });
+    } catch (error) {
+        console.error('Error recording match:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to record match',
+            error: error.message
+        });
+    }
+});
+
+// Find matches for a specific item
+app.post('/api/match', async (req, res) => {
+    try {
+        const { lost_desc, found_desc } = req.body;
+
+        if (!lost_desc || !found_desc) {
+            return res.status(400).json({ 
+                status: 'error', 
+                message: 'Both lost and found descriptions are required' 
+            });
+        }
+
+        // Call Python API for text similarity check
+        const response = await axios.post(`${process.env.PYTHON_API_URL}/match`, {
+            lost_desc,
+            found_desc
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error("Error communicating with Python API:", error.message);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'Matching service is currently unavailable' 
+        });
+    }
+});

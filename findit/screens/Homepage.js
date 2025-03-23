@@ -630,7 +630,7 @@ const HomePage = ({ navigation }) => {
 
             <TouchableOpacity 
               style={styles.quickActionItem}
-              onPress={() => navigation.navigate('ViewMatches')}
+              onPress={() => navigation.navigate('MatchingScreen')}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
                 <Icon name="git-compare-outline" size={24} color="#3d0c45" />
