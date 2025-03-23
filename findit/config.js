@@ -7,7 +7,7 @@ const API_CONFIG = {
   // Server IP address and port - using environment variables with fallbacks
   IP_ADDRESS: process.env.API_HOST || Platform.select({
     ios: 'localhost',
-    android: '192.168.18.18', // Standard Android emulator localhost
+    android: '192.168.18.23', // Your actual IPv4 address from ipconfig - CONFIRMED CORRECT
     web: 'localhost'
   }),
   PORT: process.env.API_PORT || '5000',

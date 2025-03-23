@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL, POLLING_INTERVAL } from '../config';
+import API_CONFIG from '../config';
 import { formatDistanceToNow } from 'date-fns';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -49,7 +49,7 @@ export default function NotificationsScreen({ navigation }) {
                 return;
             }
 
-            const url = `${API_URL}/api/notifications/${userId}?page=${pageNum}&limit=20`;
+            const url = `${API_CONFIG.API_URL}/api/notifications/${userId}?page=${pageNum}&limit=20`;
             console.log('Fetching notifications from:', url);
             
             const response = await fetch(url);
@@ -85,7 +85,7 @@ export default function NotificationsScreen({ navigation }) {
                 return;
             }
 
-            const url = `${API_URL}/api/notifications/poll/${userId}?lastPolled=${lastPolled}`;
+            const url = `${API_CONFIG.API_URL}/api/notifications/poll/${userId}?lastPolled=${lastPolled}`;
             console.log('Polling notifications from:', url);
             
             const response = await fetch(url);
@@ -119,7 +119,7 @@ export default function NotificationsScreen({ navigation }) {
     const markAsRead = async (notificationId) => {
         try {
             const response = await fetch(
-                `${API_URL}/api/notifications/${notificationId}/read`,
+                `${API_CONFIG.API_URL}/api/notifications/${notificationId}/read`,
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' }
@@ -148,7 +148,7 @@ export default function NotificationsScreen({ navigation }) {
             if (!userId) return;
 
             const response = await fetch(
-                `${API_URL}/api/notifications/${userId}/read-all`,
+                `${API_CONFIG.API_URL}/api/notifications/${userId}/read-all`,
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' }
@@ -171,7 +171,7 @@ export default function NotificationsScreen({ navigation }) {
         let pollTimer;
 
         if (isFocused) {
-            pollTimer = setInterval(pollNotifications, POLLING_INTERVAL);
+            pollTimer = setInterval(pollNotifications, API_CONFIG.POLLING_INTERVAL);
             pollNotifications(); // Initial poll
         }
 

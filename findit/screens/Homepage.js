@@ -20,7 +20,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { API_URL } from '../config';
+import API_CONFIG from '../config';
 
 // Constants
 const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
@@ -509,7 +509,7 @@ const HomePage = ({ navigation }) => {
   
   const fetchNotifications = async (userId) => {
     try {
-      const response = await axios.get(`${API_URL}/api/notifications/${userId}`);
+      const response = await axios.get(`${API_CONFIG.API_URL}/api/notifications/${userId}`);
       if (response.data.status === 'success') {
         setNotifications(response.data.notifications);
         setLastPolled(new Date().toISOString());
@@ -528,7 +528,7 @@ const HomePage = ({ navigation }) => {
     
     try {
       const response = await axios.get(
-        `${API_URL}/api/notifications/poll/${userId}`,
+        `${API_CONFIG.API_URL}/api/notifications/poll/${userId}`,
         { params: { lastPolled } }
       );
       
@@ -630,7 +630,7 @@ const HomePage = ({ navigation }) => {
 
             <TouchableOpacity 
               style={styles.quickActionItem}
-              onPress={() => navigation.navigate('ViewMatches')}
+              onPress={() => navigation.navigate('MatchingScreen')}
             >
               <View style={[styles.quickActionIcon, { backgroundColor: '#f0e6f2' }]}>
                 <Icon name="git-compare-outline" size={24} color="#3d0c45" />
