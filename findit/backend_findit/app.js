@@ -37,6 +37,19 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    console.log('Client IP:', req.ip);
+    console.log('Headers:', JSON.stringify(req.headers));
+    next();
+});
+
 app.use(express.json());
 
 const authenticateToken = (req, res, next) => {
@@ -640,7 +653,7 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
             date, 
             description,
             category,
-            userId: userIdObj, // Use the properly parsed ObjectId or null
+            userId: userIdObj,
             itemName: itemName || description.substring(0, 30),
             coordinates: {
                 latitude: latitude || null,
@@ -652,70 +665,111 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
         const savedItem = await foundItem.save();
         console.log(`Found item saved with ID: ${savedItem._id}, User ID: ${savedItem.userId}`);
         
+        // Send success response immediately and continue match processing in background
         res.status(201).json({ 
             status: 'success', 
             message: 'Found item reported successfully',
             itemId: savedItem._id
         });
-    } catch (error) {
-        console.error('Error reporting found item:', error);
-        res.status(500).json({ status: 'error', message: 'Server error reporting found item' });
-    }
-});
-
-// Add alias for /founditem to match frontend
-app.post('/founditem', upload.single('photo'), async (req, res) => {
-    try {
-        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
-        if (!contact || !location || !time || !date || !description || !category) {
-            return res.status(400).json({ status: 'error', message: 'All fields are required' });
-        }
-
-        // Extract userId from the JWT token if not provided in the request
-        let extractedUserId = userId;
-        if ((!extractedUserId || extractedUserId === 'null' || extractedUserId === 'undefined') && req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                extractedUserId = decoded.userId || decoded._id || decoded.id;
-                console.log('Extracted userId from token:', extractedUserId);
-            } catch (tokenError) {
-                console.error('Error extracting userId from token:', tokenError);
+        
+        // Find potential matches after responding to client
+        try {
+            // First filter by category to narrow down potential matches
+            console.log(`Finding potential matches in category: ${category}`);
+            const lostItems = await LostItem.find({ category: category });
+            console.log(`Found ${lostItems.length} lost items in the same category`);
+            
+            for (const lostItem of lostItems) {
+                try {
+                    console.log(`Comparing found item ${savedItem._id} with lost item ${lostItem._id}`);
+                    
+                    // Call the matching service to get a similarity score
+                    try {
+                        const response = await axios.post(`${process.env.PYTHON_API_URL || 'http://localhost:5001'}/match`, {
+                            lost_desc: lostItem.description,
+                            found_desc: description
+                        }, { timeout: 8000 });
+                        
+                        console.log(`Match result: similarity_score: ${response.data.similarity_score}`);
+                        
+                        // Temporarily lower the threshold for testing - change from 0.5 to 0.1
+                        if (response.data && response.data.similarity_score >= 0.1) {
+                            // Validate and parse user IDs for both items
+                            let lostUserObjectId = null;
+                            
+                            if (lostItem.userId) {
+                                if (mongoose.Types.ObjectId.isValid(lostItem.userId)) {
+                                    lostUserObjectId = lostItem.userId;
+                                } else if (typeof lostItem.userId === 'string') {
+                                    if (mongoose.Types.ObjectId.isValid(lostItem.userId)) {
+                                        lostUserObjectId = new mongoose.Types.ObjectId(lostItem.userId);
+                                    }
+                                }
+                            }
+                            
+                            // Log the user IDs for debugging
+                            console.log('Creating match with lost user ID:', lostItem.userId);
+                            console.log('Lost user ID type:', typeof lostItem.userId);
+                            console.log('Creating match with found user ID:', userIdObj);
+                            console.log('Found user ID type:', typeof userIdObj);
+                            
+                            if (!lostUserObjectId) {
+                                console.log('Cannot create match - invalid lost user ID');
+                                continue; // Skip this match
+                            }
+                            
+                            // Create a match record with validated IDs
+                            const match = new Match({
+                                lostItemId: lostItem._id,
+                                lostUserId: lostUserObjectId,
+                                foundItemId: savedItem._id,
+                                foundUserId: userIdObj,
+                                similarityScore: response.data.similarity_score,
+                                status: 'pending'
+                            });
+                            
+                            try {
+                                await match.save();
+                                console.log(`Created match between found item ${savedItem._id} and lost item ${lostItem._id}`);
+                                console.log(`Match details: Found user ${userIdObj}, Lost user ${lostUserObjectId}`);
+                                
+                                // Create notifications for both users
+                                if (lostItem.userId) {
+                                    try {
+                                        await createNotification(
+                                            lostItem.userId,
+                                            'match_found',
+                                            'Potential Match Found',
+                                            `We found a potential match for your lost item: ${lostItem.itemName || lostItem.description.substring(0, 30)}`,
+                                            { matchId: match._id, itemId: lostItem._id }
+                                        );
+                                    } catch (notifyError) {
+                                        console.error('Failed to send notification:', notifyError);
+                                    }
+                                }
+                            } catch (saveError) {
+                                console.error('Failed to save match:', saveError);
+                            }
+                        }
+                    } catch (matchServiceError) {
+                        console.error('Error with matching service:', matchServiceError.message);
+                        // Continue to next item even if there's an error with this one
+                    }
+                } catch (itemMatchError) {
+                    console.error('Error matching specific item:', itemMatchError.message);
+                    // Continue to next item
+                }
             }
+        } catch (matchError) {
+            console.error('Error finding matches:', matchError);
+            // Matching failed but the item was already saved successfully
         }
-
-        // Parse userId properly
-        let userIdObj = null;
-        if (extractedUserId && mongoose.Types.ObjectId.isValid(extractedUserId)) {
-            userIdObj = new mongoose.Types.ObjectId(extractedUserId);
-            console.log('Valid ObjectId for userId:', userIdObj);
-        } else if (extractedUserId) {
-            console.log('Invalid ObjectId format for userId:', extractedUserId);
-        } else {
-            console.log('No userId provided or extracted from token');
-        }
-
-        const foundItem = new FoundItem({
-            contact, 
-            location, 
-            time, 
-            date, 
-            description,
-            category,
-            userId: userIdObj, // Use the properly parsed ObjectId or null
-            itemName: itemName || description.substring(0, 30),
-            coordinates: {
-                latitude: latitude || null,
-                longitude: longitude || null
-            },
-            photo: req.file ? req.file.buffer : null
-        });
-
-        await foundItem.save();
-        res.status(201).json({ status: 'success', message: 'Found item reported successfully' });
     } catch (error) {
         console.error('Error reporting found item:', error);
-        res.status(500).json({ status: 'error', message: 'Server error reporting found item' });
+        // Send error response only if we haven't already sent a success response
+        if (!res.headersSent) {
+            res.status(500).json({ status: 'error', message: 'Server error reporting found item' });
+        }
     }
 });
 
@@ -768,6 +822,17 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
             photoData = req.file.buffer;
         }
 
+        // Parse userId properly
+        let userIdObj = null;
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+            userIdObj = new mongoose.Types.ObjectId(userId);
+            console.log('Valid ObjectId for userId:', userIdObj);
+        } else if (userId) {
+            console.log('Invalid ObjectId format for userId:', userId);
+        } else {
+            console.log('No userId provided or extracted from token');
+        }
+
         const lostItem = new LostItem({
             contact,
             location,
@@ -775,7 +840,7 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
             date,
             description,
             category,
-            userId: userId || null,
+            userId: userIdObj,
             itemName: itemName || description.substring(0, 30),
             coordinates: {
                 latitude: latitude || null,
@@ -806,11 +871,107 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
             });
             
             const savedItem = await lostItem.save();
+            console.log(`Lost item saved with ID: ${savedItem._id}, User ID: ${savedItem.userId}`);
+            
+            // Send success response immediately and continue match processing in background
             res.status(201).json({ 
                 status: 'success', 
                 message: 'Lost item reported successfully',
                 itemId: savedItem._id
             });
+
+            // Find potential matches after responding to client
+            try {
+                // First filter by category to narrow down potential matches
+                console.log(`Finding potential matches in category: ${category}`);
+                const foundItems = await FoundItem.find({ category: category });
+                console.log(`Found ${foundItems.length} items in the same category`);
+                
+                for (const foundItem of foundItems) {
+                    try {
+                        console.log(`Comparing lost item ${savedItem._id} with found item ${foundItem._id}`);
+                        
+                        // Call the matching service to get a similarity score
+                        try {
+                            const response = await axios.post(`${process.env.PYTHON_API_URL || 'http://localhost:5001'}/match`, {
+                                lost_desc: savedItem.description,
+                                found_desc: foundItem.description
+                            }, { timeout: 8000 });
+                            
+                            console.log(`Match result: similarity_score: ${response.data.similarity_score}`);
+                            
+                            // Temporarily lower the threshold for testing - change from 0.5 to 0.1
+                            if (response.data && response.data.similarity_score >= 0.1) {
+                                // Validate and parse user IDs for both items
+                                let foundUserObjectId = null;
+                                
+                                if (foundItem.userId) {
+                                    if (mongoose.Types.ObjectId.isValid(foundItem.userId)) {
+                                        foundUserObjectId = foundItem.userId;
+                                    } else if (typeof foundItem.userId === 'string') {
+                                        if (mongoose.Types.ObjectId.isValid(foundItem.userId)) {
+                                            foundUserObjectId = new mongoose.Types.ObjectId(foundItem.userId);
+                                        }
+                                    }
+                                }
+                                
+                                // Log the user IDs for debugging
+                                console.log('Creating match with found user ID:', foundItem.userId);
+                                console.log('Found user ID type:', typeof foundItem.userId);
+                                console.log('Creating match with lost user ID:', savedItem.userId);
+                                console.log('Lost user ID type:', typeof savedItem.userId);
+                                
+                                if (!foundUserObjectId) {
+                                    console.log('Cannot create match - invalid found user ID');
+                                    continue; // Skip this match
+                                }
+                                
+                                // Create a match record with validated IDs
+                                const match = new Match({
+                                    lostItemId: savedItem._id,
+                                    lostUserId: userIdObj,
+                                    foundItemId: foundItem._id,
+                                    foundUserId: foundUserObjectId,
+                                    similarityScore: response.data.similarity_score,
+                                    status: 'pending'
+                                });
+                                
+                                try {
+                                    await match.save();
+                                    console.log(`Created match between lost item ${savedItem._id} and found item ${foundItem._id}`);
+                                    console.log(`Match details: Lost user ${userIdObj}, Found user ${foundUserObjectId}`);
+                                    
+                                    // Create notifications for both users
+                                    if (foundItem.userId) {
+                                        try {
+                                            await createNotification(
+                                                foundItem.userId,
+                                                'match_found',
+                                                'Potential Match Found',
+                                                `We found a potential match for your found item: ${foundItem.itemName || foundItem.description.substring(0, 30)}`,
+                                                { matchId: match._id, itemId: foundItem._id }
+                                            );
+                                        } catch (notifyError) {
+                                            console.error('Failed to send notification:', notifyError);
+                                        }
+                                    }
+                                } catch (saveError) {
+                                    console.error('Failed to save match:', saveError);
+                                }
+                            }
+                        } catch (matchServiceError) {
+                            console.error('Error with matching service:', matchServiceError.message);
+                            // Continue to next item even if there's an error with this one
+                        }
+                    } catch (itemMatchError) {
+                        console.error('Error matching specific item:', itemMatchError.message);
+                        // Continue to next item
+                    }
+                }
+            } catch (matchError) {
+                console.error('Error finding matches:', matchError);
+                // Matching failed but the item was already saved successfully
+            }
         } catch (saveError) {
             console.error('Error saving lost item:', saveError);
             if (saveError.name === 'ValidationError') {
@@ -827,11 +988,14 @@ app.post('/reportlost', upload.single('photo'), async (req, res) => {
         }
     } catch (error) {
         console.error('Error reporting lost item:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Server error reporting lost item',
-            details: error.message 
-        });
+        // Send error response only if we haven't already sent a success response
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                status: 'error', 
+                message: 'Server error reporting lost item',
+                details: error.message 
+            });
+        }
     }
 });
 
@@ -1290,6 +1454,8 @@ server.on('error', (error) => {
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`For local access use: http://localhost:${PORT}`);
+    console.log(`For network access use: http://<your-ip-address>:${PORT}`);
 });
 
 // Helper function to normalize text for better matching
@@ -1732,9 +1898,19 @@ const matchSchema = new mongoose.Schema({
         ref: 'LostItem',
         required: true
     },
+    lostUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     foundItemId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'FoundItem',
+        required: true
+    },
+    foundUserId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         required: true
     },
     similarityScore: {
@@ -1754,43 +1930,122 @@ const matchSchema = new mongoose.Schema({
 
 const Match = mongoose.model('Match', matchSchema);
 
-// Record a match between items
-app.post('/api/record-match', async (req, res) => {
+// Get matches for a specific user
+app.get('/api/view-matches', async (req, res) => {
     try {
-        const { lostItemId, foundItemId, similarityScore } = req.body;
+        const { userId } = req.query;
 
-        if (!lostItemId || !foundItemId) {
+        if (!userId) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Both lost item ID and found item ID are required'
+                message: 'User ID is required'
             });
         }
 
-        if (similarityScore < 0.4) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Similarity score too low to record a match'
-            });
-        }
-
-        const match = new Match({
-            lostItemId,
-            foundItemId,
-            similarityScore,
-            status: 'confirmed'
+        console.log(`Fetching matches for userId: ${userId} (type: ${typeof userId})`);
+        
+        // Convert userId to string for safe comparison
+        const userIdStr = userId.toString();
+        
+        // Log all matches in the database to help debug
+        const allMatches = await Match.find({});
+        console.log(`Total matches in database: ${allMatches.length}`);
+        
+        // Find all matches where this user is involved
+        const matches = await Match.find({
+            $or: [
+                { lostUserId: userIdStr },
+                { foundUserId: userIdStr },
+                { lostUserId: new mongoose.Types.ObjectId(userIdStr) },
+                { foundUserId: new mongoose.Types.ObjectId(userIdStr) }
+            ]
+        })
+        .populate('lostItemId')
+        .populate('foundItemId')
+        .sort({ createdAt: -1 });
+        
+        console.log(`Found ${matches.length} matches for user ${userId}`);
+        
+        // Process the matches to make them more usable
+        const processedMatches = matches.map(match => {
+            const matchObj = match.toObject();
+            
+            // Add convenience fields
+            matchObj.isLostReporter = match.lostUserId.toString() === userIdStr;
+            matchObj.relevantItem = matchObj.isLostReporter ? matchObj.lostItemId : matchObj.foundItemId;
+            matchObj.otherItem = !matchObj.isLostReporter ? matchObj.lostItemId : matchObj.foundItemId;
+            
+            return matchObj;
         });
-
-        await match.save();
 
         res.json({
             status: 'success',
-            data: { match }
+            matches: processedMatches,
+            totalMatches: processedMatches.length
         });
     } catch (error) {
-        console.error('Error recording match:', error);
+        console.error('Error fetching user matches:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Failed to record match',
+            message: 'Failed to fetch matches',
+            error: error.message
+        });
+    }
+});
+
+// Admin endpoint to view all matches (for debugging)
+app.get('/api/dev/all-matches', async (req, res) => {
+    try {
+        const allMatches = await Match.find({})
+            .populate('lostItemId')
+            .populate('foundItemId')
+            .sort({ createdAt: -1 });
+        
+        // Add enhanced details
+        const enhancedMatches = await Promise.all(allMatches.map(async (match) => {
+            const matchObj = match.toObject();
+            
+            // Record the string versions of IDs for comparison
+            matchObj.lostUserIdString = matchObj.lostUserId ? matchObj.lostUserId.toString() : null;
+            matchObj.foundUserIdString = matchObj.foundUserId ? matchObj.foundUserId.toString() : null;
+            
+            try {
+                if (matchObj.lostUserId) {
+                    const lostUser = await User.findById(matchObj.lostUserId).select('username email');
+                    if (lostUser) {
+                        matchObj.lostUserDetails = {
+                            username: lostUser.username,
+                            email: lostUser.email
+                        };
+                    }
+                }
+                
+                if (matchObj.foundUserId) {
+                    const foundUser = await User.findById(matchObj.foundUserId).select('username email');
+                    if (foundUser) {
+                        matchObj.foundUserDetails = {
+                            username: foundUser.username,
+                            email: foundUser.email
+                        };
+                    }
+                }
+            } catch (error) {
+                console.error('Error getting user details:', error);
+            }
+            
+            return matchObj;
+        }));
+        
+        res.json({
+            status: 'success',
+            matches: enhancedMatches,
+            totalMatches: enhancedMatches.length
+        });
+    } catch (error) {
+        console.error('Error fetching all matches:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch all matches',
             error: error.message
         });
     }

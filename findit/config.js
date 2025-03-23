@@ -6,9 +6,9 @@ import { Platform } from 'react-native';
 const API_CONFIG = {
   // Server IP address and port - using environment variables with fallbacks
   IP_ADDRESS: process.env.API_HOST || Platform.select({
-    ios: '192.168.18.23',
-    android: '192.168.18.23', // Updated IP address
-    web: '192.168.18.23'
+    ios: 'localhost',
+    android: '192.168.18.23', // Your actual IPv4 address from ipconfig - CONFIRMED CORRECT
+    web: 'localhost'
   }),
   PORT: process.env.API_PORT || '5000',
   
