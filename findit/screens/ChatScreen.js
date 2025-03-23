@@ -28,12 +28,41 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
 const normalize = (size) => Math.round(size * scale);
 
+// Create a regular function instead of using hooks outside the component
+const createApiClient = (baseUrl) => {
+    return axios.create({
+        baseURL: baseUrl,
+        timeout: 15000,
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+};
+
 const ChatScreen = ({ route, navigation }) => {
-    const user = useMemo(() => route.params?.user || {
-        id: '0',
-        name: 'Unknown Contact',
-        avatar: null
-    }, [route.params?.user]);
+    // Extract otherUserId, matchId, and userName from route params
+    const otherUserId = route.params?.otherUserId;
+    const matchId = route.params?.matchId;
+    const matchData = route.params?.match;
+    
+    // Create a user object from the route params
+    const user = useMemo(() => {
+        // If we have a user object directly, use it
+        if (route.params?.user) {
+            console.log('Using provided user object:', route.params.user);
+            return route.params.user;
+        }
+        
+        // Otherwise create a user object from the other parameters
+        const userName = route.params?.userName || 'Unknown Contact';
+        console.log('Creating user object with name:', userName);
+        return {
+            id: otherUserId || '0',
+            _id: otherUserId || '0', // Include both formats for compatibility
+            name: userName,
+            avatar: null
+        };
+    }, [route.params?.user, otherUserId, route.params?.userName]);
 
     const [messages, setMessages] = useState([]);
     const [socket, setSocket] = useState(null);
@@ -41,152 +70,146 @@ const ChatScreen = ({ route, navigation }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [serverUrl, setServerUrl] = useState(API_CONFIG.API_URL);
+    
+    // Create a memoized API client that updates when serverUrl changes
+    const apiClient = useMemo(() => createApiClient(serverUrl), [serverUrl]);
 
-    // Check which server is available
-    useEffect(() => {
-        const checkServer = async () => {
+    // Check which server is available - optimized with useCallback
+    const checkServer = useCallback(async () => {
+        try {
+            await axios.get(`${API_CONFIG.API_URL}/api-test`);
+            setServerUrl(API_CONFIG.API_URL);
+        } catch (error) {
             try {
-                await axios.get(`${API_CONFIG.API_URL}/api-test`);
-                setServerUrl(API_CONFIG.API_URL);
-                console.log('Using primary server:', API_CONFIG.API_URL);
-            } catch (error) {
-                console.log('Primary server unavailable, trying backup server');
-                try {
-                    await axios.get(`${API_CONFIG.BACKUP_API_URL}/api-test`);
-                    setServerUrl(API_CONFIG.BACKUP_API_URL);
-                    console.log('Using backup server:', API_CONFIG.BACKUP_API_URL);
-                } catch (backupError) {
-                    console.error('Both servers unavailable:', backupError);
-                    setError('Server connection failed. Please try again later.');
-                }
+                await axios.get(`${API_CONFIG.BACKUP_API_URL}/api-test`);
+                setServerUrl(API_CONFIG.BACKUP_API_URL);
+            } catch (backupError) {
+                setError('Server connection failed. Please try again later.');
             }
-        };
+        }
+    }, []);
 
+    // Run server check once on mount
+    useEffect(() => {
         checkServer();
-    }, []);
+    }, [checkServer]);
 
-    // Fetch current user ID from AsyncStorage
-    useEffect(() => {
-        const getCurrentUserId = async () => {
-            try {
-                const userData = await AsyncStorage.getItem('userData');
-                console.log('User data from AsyncStorage:', userData);
-
-                if (userData) {
-                    const parsedUserData = JSON.parse(userData);
-                    console.log('Parsed user data:', parsedUserData);
-
-                    // Use _id if available, otherwise use id
-                    const userId = parsedUserData._id || parsedUserData.id;
-                    console.log('Using user ID:', userId);
-
-                    setCurrentUserId(userId);
-                } else {
-                    // If no user data, use a default ID (this should be handled better in a real app)
-                    console.warn('No user data found, using default ID');
-                    setCurrentUserId('1');
-                }
-            } catch (error) {
-                console.error('Error fetching user data:', error);
-                // Fallback to default ID
+    // Fetch current user ID from AsyncStorage - optimized with useCallback
+    const getCurrentUserId = useCallback(async () => {
+        try {
+            const userData = await AsyncStorage.getItem('userData');
+            
+            if (userData) {
+                const parsedUserData = JSON.parse(userData);
+                // Use _id if available, otherwise use id
+                const userId = parsedUserData._id || parsedUserData.id;
+                setCurrentUserId(userId);
+                return userId;
+            } else {
+                // If no user data, use a default ID (this should be handled better in a real app)
                 setCurrentUserId('1');
+                return '1';
             }
-        };
-
-        getCurrentUserId();
+        } catch (error) {
+            // Fallback to default ID
+            setCurrentUserId('1');
+            return '1';
+        }
     }, []);
 
-    // Fetch message history when both user IDs are available
+    // Run getCurrentUserId once on mount
     useEffect(() => {
-        if (!currentUserId || !user.id) return;
+        getCurrentUserId();
+    }, [getCurrentUserId]);
 
-        console.log('Fetching messages between', currentUserId, 'and', user.id);
-
-        const fetchMessages = async () => {
-            try {
-                setLoading(true);
-                const token = await AsyncStorage.getItem('authToken');
-                const response = await axios.get(
-                    `${serverUrl}/api/messages/${currentUserId}/${user.id}`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`
-                        }
+    // Fetch message history when both user IDs are available - optimized with useCallback
+    const fetchMessages = useCallback(async () => {
+        if (!currentUserId || (!user.id && !otherUserId)) return;
+        
+        const chatPartnerId = otherUserId || user.id;
+        
+        try {
+            setLoading(true);
+            const token = await AsyncStorage.getItem('authToken');
+            const response = await apiClient.get(
+                `/api/messages/${currentUserId}/${chatPartnerId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
                     }
-                );
-                console.log('Messages API response:', response.data);
-
-                // Handle the new response format
-                if (response.data && response.data.status === 'success' && Array.isArray(response.data.messages)) {
-                    // Format messages for GiftedChat
-                    const formattedMessages = response.data.messages.map(msg => ({
-                        ...msg,
-                        user: {
-                            _id: msg.user._id,
-                            name: msg.user._id === currentUserId ? 'You' : user.name,
-                            avatar: msg.user._id === currentUserId ? null : user.avatar
-                        },
-                        // Ensure createdAt is a Date object
-                        createdAt: new Date(msg.createdAt)
-                    }));
-
-                    // Reverse the order for GiftedChat if needed
-                    // GiftedChat expects newest messages first
-                    formattedMessages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-                    setMessages(formattedMessages);
-                    console.log(`Loaded ${formattedMessages.length} messages`);
-                } else if (response.data && Array.isArray(response.data)) {
-                    // Handle old format for backward compatibility
-                    const formattedMessages = response.data.map(msg => ({
-                        ...msg,
-                        user: {
-                            _id: msg.user._id,
-                            name: msg.user._id === currentUserId ? 'You' : user.name,
-                            avatar: msg.user._id === currentUserId ? null : user.avatar
-                        },
-                        createdAt: new Date(msg.createdAt)
-                    }));
-
-                    formattedMessages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                    setMessages(formattedMessages);
-                } else {
-                    console.warn('Unexpected response format:', response.data);
-                    setMessages([]);
                 }
+            );
+            
+            // Handle the new response format
+            if (response.data && response.data.status === 'success' && Array.isArray(response.data.messages)) {
+                // Format messages for GiftedChat
+                const formattedMessages = response.data.messages.map(msg => ({
+                    ...msg,
+                    user: {
+                        _id: msg.user._id,
+                        name: msg.user._id === currentUserId ? 'You' : user.name,
+                        avatar: msg.user._id === currentUserId ? null : user.avatar
+                    },
+                    // Ensure createdAt is a Date object
+                    createdAt: new Date(msg.createdAt)
+                }));
 
-                setError(null);
-            } catch (error) {
-                console.error('Error fetching messages:', error);
-                setError('Failed to load message history');
-            } finally {
-                setLoading(false);
+                // Reverse the order for GiftedChat if needed
+                // GiftedChat expects newest messages first
+                formattedMessages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+                setMessages(formattedMessages);
+            } else if (response.data && Array.isArray(response.data)) {
+                // Handle old format for backward compatibility
+                const formattedMessages = response.data.map(msg => ({
+                    ...msg,
+                    user: {
+                        _id: msg.user._id,
+                        name: msg.user._id === currentUserId ? 'You' : user.name,
+                        avatar: msg.user._id === currentUserId ? null : user.avatar
+                    },
+                    createdAt: new Date(msg.createdAt)
+                }));
+
+                formattedMessages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                setMessages(formattedMessages);
+            } else {
+                setMessages([]);
             }
-        };
 
-        fetchMessages();
-    }, [currentUserId, user.id, user.name, user.avatar, serverUrl]);
+            setError(null);
+        } catch (error) {
+            setError('Failed to load message history');
+        } finally {
+            setLoading(false);
+        }
+    }, [currentUserId, user, otherUserId, apiClient]);
 
-    // Set up Socket.IO connection
+    // Run fetchMessages when dependencies change
     useEffect(() => {
+        if (currentUserId && (user.id || otherUserId)) {
+            fetchMessages();
+        }
+    }, [fetchMessages, currentUserId, user.id, otherUserId]);
+
+    // Setup Socket.IO connection - optimized with useCallback
+    const setupSocketConnection = useCallback(() => {
         if (!currentUserId) return;
-
-        console.log('Setting up Socket.IO connection for user', currentUserId);
-
+        
         // Connect to the Socket.IO server
         const newSocket = io(serverUrl);
         setSocket(newSocket);
 
         // Join the room with the current user's ID
         newSocket.emit('joinRoom', currentUserId);
-        console.log('Joined room:', currentUserId);
+        
+        // Get the chat partner ID
+        const chatPartnerId = otherUserId || user.id;
 
         // Listen for incoming messages
         newSocket.on('receiveMessage', (message) => {
-            console.log('Received message via Socket.IO:', message);
-
             // Only add the message if it's from the current chat partner
-            if (message.senderId === user.id) {
+            if (message.senderId === chatPartnerId) {
                 const newMessage = {
                     _id: message._id || Math.random().toString(),
                     text: message.text,
@@ -194,32 +217,37 @@ const ChatScreen = ({ route, navigation }) => {
                     user: {
                         _id: message.senderId,
                         name: user.name,
-                        avatar: user.avatar // Always use the user's avatar for their messages
+                        avatar: user.avatar
                     },
                 };
 
                 // Add the new message to the existing messages
-                // GiftedChat.append puts the new message at the beginning of the array
-                // which is correct for inverted={true}
                 setMessages(previousMessages => GiftedChat.append(previousMessages, [newMessage]));
             }
         });
+        
+        return newSocket;
+    }, [currentUserId, user, otherUserId, serverUrl]);
 
+    // Setup and cleanup socket connection
+    useEffect(() => {
+        const newSocket = setupSocketConnection();
+        
         return () => {
-            console.log('Disconnecting Socket.IO');
-            newSocket.disconnect();
+            if (newSocket) {
+                newSocket.disconnect();
+            }
         };
-    }, [currentUserId, user.id, user.name, user.avatar, serverUrl]);
+    }, [setupSocketConnection]);
 
+    // Send message - optimized with useCallback
     const onSend = useCallback((newMessages = []) => {
         if (!currentUserId || !socket) {
-            console.error('Cannot send message: currentUserId or socket is missing');
             return;
         }
 
-        console.log('Sending message to', user.id, 'from', currentUserId);
-        console.log('Message content:', newMessages[0].text);
-
+        const chatPartnerId = otherUserId || user.id;
+        
         // Format the message for GiftedChat
         const giftedMessage = {
             _id: Math.random().toString(),
@@ -228,46 +256,30 @@ const ChatScreen = ({ route, navigation }) => {
             user: {
                 _id: currentUserId,
                 name: 'You',
-                // Don't set avatar for current user's messages
             }
         };
 
         // Add the message to the local state
-        // GiftedChat.append puts the new message at the beginning of the array
-        // which is correct for inverted={true}
         setMessages(previousMessages => GiftedChat.append(previousMessages, [giftedMessage]));
 
-        // Use only one method to send the message - either API or Socket.IO, not both
-        // We'll use the API method as it's more reliable
-        axios.post(`${serverUrl}/api/messages`, {
-            receiverId: user.id,
+        // Send the message via API
+        apiClient.post('/api/messages', {
+            receiverId: chatPartnerId,
             senderId: currentUserId,
             text: newMessages[0].text,
         })
             .then(response => {
-                console.log('Message saved via API:', response.data);
-
-                // No need to also send via Socket.IO - the backend will handle that
-                // socket.emit('sendMessage', {
-                //     receiverId: user.id,
-                //     senderId: currentUserId,
-                //     text: newMessages[0].text,
-                // });
-
-                // Remove the automatic navigation back to chat list
-                // setTimeout(() => {
-                //     navigation.navigate('ChatListScreen');
-                // }, 1000);
+                // Success case handled silently
             })
             .catch(error => {
-                console.error('Error saving message via API:', error);
-
                 // If API fails, try Socket.IO as fallback
-                socket.emit('sendMessage', {
-                    receiverId: user.id,
-                    senderId: currentUserId,
-                    text: newMessages[0].text,
-                });
+                if (socket) {
+                    socket.emit('sendMessage', {
+                        receiverId: chatPartnerId,
+                        senderId: currentUserId,
+                        text: newMessages[0].text,
+                    });
+                }
 
                 // Show an error alert
                 Alert.alert(
@@ -276,11 +288,10 @@ const ChatScreen = ({ route, navigation }) => {
                     [{ text: 'OK' }]
                 );
             });
+    }, [socket, user, currentUserId, otherUserId, apiClient]);
 
-        console.log('Message sending process initiated');
-    }, [socket, user.id, currentUserId, navigation, serverUrl]);
-
-    const renderBubble = (props) => (
+    // Memoize UI components to prevent recreation on every render
+    const renderBubble = useCallback((props) => (
         <Bubble
             {...props}
             wrapperStyle={{
@@ -292,43 +303,69 @@ const ChatScreen = ({ route, navigation }) => {
                 left: { color: '#000' }
             }}
         />
-    );
+    ), []);
 
-    const renderInputToolbar = (props) => (
+    const renderInputToolbar = useCallback((props) => (
         <InputToolbar
             {...props}
             containerStyle={styles.inputToolbar}
         />
-    );
+    ), []);
 
-    const renderComposer = (props) => (
+    const renderComposer = useCallback((props) => (
         <Composer
             {...props}
             textInputStyle={styles.composer}
         />
-    );
+    ), []);
 
-    const renderSend = (props) => (
+    const renderSend = useCallback((props) => (
         <Send {...props} containerStyle={styles.sendContainer}>
             <View style={styles.sendButton}>
                 <Ionicons name="send" size={normalize(24)} color="#3b0b40" />
             </View>
         </Send>
-    );
-
-    if (loading && messages.length === 0) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#3b0b40" />
+    ), []);
+    
+    // Handle retry loading
+    const handleRetry = useCallback(() => {
+        setLoading(true);
+        setError(null);
+        
+        // Add a small delay to show the loading state before retrying
+        setTimeout(() => {
+            fetchMessages();
+        }, 500);
+    }, [fetchMessages]);
+    
+    // Show loading skeleton if needed
+    const renderLoadingSkeleton = useCallback(() => (
+        <View style={styles.loadingContainer}>
+            <View style={styles.skeletonHeader}>
+                <View style={styles.skeletonAvatar} />
+                <View style={styles.skeletonHeaderText} />
             </View>
-        );
+            <View style={styles.messagesContainer}>
+                {[1, 2, 3, 4].map(i => (
+                    <View key={i} style={[
+                        styles.skeletonMessage,
+                        { alignSelf: i % 2 === 0 ? 'flex-end' : 'flex-start' }
+                    ]} />
+                ))}
+            </View>
+        </View>
+    ), []);
+
+    // Render loading state if no messages loaded yet
+    if (loading && messages.length === 0) {
+        return renderLoadingSkeleton();
     }
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'undefined'}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.container}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
             >
@@ -356,39 +393,13 @@ const ChatScreen = ({ route, navigation }) => {
                     </View>
                 </View>
 
-                {error && (
+                {error ? (
                     <View style={styles.errorContainer}>
                         <Ionicons name="warning-outline" size={normalize(40)} color="#FF3B30" />
                         <Text style={styles.errorText}>{error}</Text>
                         <TouchableOpacity
                             style={styles.retryButton}
-                            onPress={() => {
-                                setLoading(true);
-                                // This will re-trigger the useEffect that fetches messages
-                                setTimeout(() => setLoading(false), 500);
-                            }}
-                        >
-                            <Text style={styles.retryButtonText}>Retry</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {loading ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#5A67F2" />
-                        <Text style={styles.loadingText}>Loading messages...</Text>
-                    </View>
-                ) : error ? (
-                    <View style={styles.errorContainer}>
-                        <Ionicons name="warning-outline" size={normalize(40)} color="#FF3B30" />
-                        <Text style={styles.errorText}>{error}</Text>
-                        <TouchableOpacity
-                            style={styles.retryButton}
-                            onPress={() => {
-                                setLoading(true);
-                                // This will re-trigger the useEffect that fetches messages
-                                setTimeout(() => setLoading(false), 500);
-                            }}
+                            onPress={handleRetry}
                         >
                             <Text style={styles.retryButtonText}>Retry</Text>
                         </TouchableOpacity>
@@ -404,9 +415,6 @@ const ChatScreen = ({ route, navigation }) => {
                         renderComposer={renderComposer}
                         alwaysShowSend
                         scrollToBottom
-                      
-                        
-                        
                         renderLoading={() => (
                             <View style={styles.loadingContainer}>
                                 <ActivityIndicator size="large" color="#5A67F2" />
@@ -414,11 +422,18 @@ const ChatScreen = ({ route, navigation }) => {
                         )}
                         listViewProps={{
                             showsVerticalScrollIndicator: false,
-                            initialNumToRender: 20,
-                            maxToRenderPerBatch: 20,
-                            windowSize: 20,
+                            initialNumToRender: 10, // Reduced for better initial load
+                            maxToRenderPerBatch: 10, // Reduced for smoother scrolling
+                            windowSize: 10, // Reduced window size
                             onEndReachedThreshold: 0.5,
-                            contentContainerStyle: { paddingBottom: 10 }
+                            contentContainerStyle: { paddingBottom: 10 },
+                            removeClippedSubviews: Platform.OS === 'android', // Better performance on Android
+                            keyboardShouldPersistTaps: "handled", // Prevents keyboard dismissal issues
+                            keyboardDismissMode: "on-drag", // Improves keyboard interaction
+                            maintainVisibleContentPosition: { // Keeps visible content in view when keyboard appears
+                                minIndexForVisible: 0,
+                                autoscrollToTopThreshold: 100
+                            }
                         }}
                         messagesContainerStyle={styles.messagesContainer}
                         minComposerHeight={normalize(40)}
@@ -429,6 +444,9 @@ const ChatScreen = ({ route, navigation }) => {
                             { type: 'phone', style: linkStyle, onPress: (phone) => Linking.openURL(`tel:${phone}`) },
                             { type: 'email', style: linkStyle, onPress: (email) => Linking.openURL(`mailto:${email}`) }
                         ]}
+                        infiniteScroll={false} // Disable auto-loading old messages
+                        renderAvatar={null} // Disable avatar rendering for better performance
+                        isLoadingEarlier={false} // Disable loading earlier messages indicator
                     />
                 )}
             </KeyboardAvoidingView>
@@ -507,21 +525,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
         padding: normalize(15),
-        backgroundColor: '#ffeeee',
-        borderRadius: normalize(5),
-        margin: normalize(15),
+        backgroundColor: '#fff',
     },
     errorText: {
         color: '#cc0000',
         textAlign: 'center',
-        fontSize: normalize(14),
+        fontSize: normalize(16),
+        marginVertical: normalize(15),
     },
     retryButton: {
-        padding: normalize(10),
+        padding: normalize(12),
         backgroundColor: '#3b0b40',
-        borderRadius: normalize(5),
+        borderRadius: normalize(8),
         marginTop: normalize(10),
+        minWidth: normalize(120),
+        alignItems: 'center',
     },
     retryButtonText: {
         color: '#fff',
@@ -561,6 +583,37 @@ const styles = StyleSheet.create({
         fontSize: normalize(16),
         fontWeight: 'bold',
         marginTop: normalize(10),
+    },
+    // Skeleton loading styles
+    skeletonHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: normalize(12),
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        backgroundColor: '#fff',
+        width: '100%'
+    },
+    skeletonAvatar: {
+        width: normalize(40),
+        height: normalize(40),
+        borderRadius: normalize(20),
+        backgroundColor: '#f0f0f0',
+        marginRight: normalize(10),
+    },
+    skeletonHeaderText: {
+        height: normalize(20),
+        width: '50%',
+        backgroundColor: '#f0f0f0',
+        borderRadius: normalize(4),
+    },
+    skeletonMessage: {
+        height: normalize(40),
+        width: '70%',
+        backgroundColor: '#f0f0f0',
+        borderRadius: normalize(12),
+        marginVertical: normalize(8),
+        marginHorizontal: normalize(15),
     }
 });
 
