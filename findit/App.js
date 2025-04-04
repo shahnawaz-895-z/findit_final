@@ -21,6 +21,7 @@ import HelpScreen from './screens/HelpScreen';
 import MatchingScreen from './screens/MatchingScreen.js';
 import MatchDetailsScreen from './screens/MatchDetailsScreen.js';
 import PotentialMatchesScreen from './screens/PotentialMatchesScreen.js';
+import ItemDetailsScreen from './screens/ItemDetailsScreen';
 
 const Stack = createStackNavigator();
 
@@ -94,6 +95,18 @@ export default function App() {
             component={PotentialMatchesScreen} 
             options={{
                 title: 'Potential Matches',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+                headerShown: true,
+            }}
+          />
+          <Stack.Screen 
+            name="ItemDetails" 
+            component={ItemDetailsScreen} 
+            options={{
+                title: 'Item Details',
                 headerStyle: {
                     backgroundColor: '#3d0c45',
                 },

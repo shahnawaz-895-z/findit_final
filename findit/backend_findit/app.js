@@ -741,10 +741,43 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
                                             'match_found',
                                             'Potential Match Found',
                                             `We found a potential match for your lost item: ${lostItem.itemName || lostItem.description.substring(0, 30)}`,
-                                            { matchId: match._id, itemId: lostItem._id }
+                                            { 
+                                                matchId: match._id, 
+                                                itemId: lostItem._id,
+                                                lostItemId: savedItem._id,
+                                                location: savedItem.location,
+                                                time: savedItem.time,
+                                                date: savedItem.date,
+                                                category: savedItem.category,
+                                                itemName: lostItem.itemName || lostItem.description.substring(0, 30)
+                                            }
                                         );
                                     } catch (notifyError) {
                                         console.error('Failed to send notification:', notifyError);
+                                    }
+                                }
+
+                                // Also notify the user who found the item
+                                if (userIdObj) {
+                                    try {
+                                        await createNotification(
+                                            userIdObj,
+                                            'match_found',
+                                            'Potential Match Found',
+                                            `We found a potential match for your found item: ${savedItem.itemName || savedItem.description.substring(0, 30)}`,
+                                            { 
+                                                matchId: match._id, 
+                                                itemId: savedItem._id,
+                                                foundItemId: lostItem._id,
+                                                location: lostItem.location,
+                                                time: lostItem.time,
+                                                date: lostItem.date,
+                                                category: lostItem.category,
+                                                itemName: savedItem.itemName || savedItem.description.substring(0, 30)
+                                            }
+                                        );
+                                    } catch (notifyError) {
+                                        console.error('Failed to send notification to finder:', notifyError);
                                     }
                                 }
                             } catch (saveError) {
@@ -774,232 +807,6 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
 });
 
 // **Report Lost Item**
-app.post('/reportlost', upload.single('photo'), async (req, res) => {
-    try {
-        console.log('Received lost item report:', req.body);
-        console.log('Content-Type:', req.headers['content-type']);
-        
-        let { contact, location, time, date, description, category, userId, itemName, latitude, longitude, uniquePoint } = req.body;
-        
-        // Extract userId from the JWT token if not provided in the request
-        if (!userId && req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                userId = decoded.userId || decoded._id || decoded.id;
-                console.log('Extracted userId from token:', userId);
-            } catch (tokenError) {
-                console.error('Error extracting userId from token:', tokenError);
-            }
-        }
-        
-        // Log the user ID and uniquePoint for debugging
-        console.log(`User ID from request: ${userId}`);
-        console.log(`uniquePoint from request: ${uniquePoint}`);
-        console.log(`uniquePoint type: ${typeof uniquePoint}`);
-        console.log(`All req.body keys: ${Object.keys(req.body)}`);
-        
-        // Validation with detailed error messages
-        const missingFields = [];
-        if (!contact) missingFields.push('contact');
-        if (!location) missingFields.push('location');
-        if (!time) missingFields.push('time');
-        if (!date) missingFields.push('date');
-        if (!description) missingFields.push('description');
-        if (!category) missingFields.push('category');
-        if (!uniquePoint) missingFields.push('uniquePoint');
-
-        if (missingFields.length > 0) {
-            console.log(`Missing required fields: ${missingFields.join(', ')}`);
-            return res.status(400).json({ 
-                status: 'error', 
-                message: `Missing required fields: ${missingFields.join(', ')}` 
-            });
-        }
-
-        let photoData = null;
-        if (req.file) {
-            photoData = req.file.buffer;
-        }
-
-        // Parse userId properly
-        let userIdObj = null;
-        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-            userIdObj = new mongoose.Types.ObjectId(userId);
-            console.log('Valid ObjectId for userId:', userIdObj);
-        } else if (userId) {
-            console.log('Invalid ObjectId format for userId:', userId);
-        } else {
-            console.log('No userId provided or extracted from token');
-        }
-
-        const lostItem = new LostItem({
-            contact,
-            location,
-            time,
-            date,
-            description,
-            category,
-            userId: userIdObj,
-            itemName: itemName || description.substring(0, 30),
-            coordinates: {
-                latitude: latitude || null,
-                longitude: longitude || null
-            },
-            uniquePoint: uniquePoint || "", // Ensure it's at least an empty string instead of undefined
-            photo: photoData
-        });
-
-        try {
-            // Add extra validation check here
-            if (!lostItem.uniquePoint) {
-                return res.status(400).json({ 
-                    status: 'validation_error', 
-                    message: 'Validation error', 
-                    errors: ['uniquePoint: Path `uniquePoint` is required.']
-                });
-            }
-            
-            // Log the complete item before saving
-            console.log('Attempting to save lost item:', {
-                contact: lostItem.contact,
-                location: lostItem.location,
-                category: lostItem.category,
-                userId: lostItem.userId,
-                uniquePoint: lostItem.uniquePoint,
-                hasPhoto: !!lostItem.photo
-            });
-            
-            const savedItem = await lostItem.save();
-            console.log(`Lost item saved with ID: ${savedItem._id}, User ID: ${savedItem.userId}`);
-            
-            // Send success response immediately and continue match processing in background
-            res.status(201).json({ 
-                status: 'success', 
-                message: 'Lost item reported successfully',
-                itemId: savedItem._id
-            });
-
-            // Find potential matches after responding to client
-            try {
-                // First filter by category to narrow down potential matches
-                console.log(`Finding potential matches in category: ${category}`);
-                const foundItems = await FoundItem.find({ category: category });
-                console.log(`Found ${foundItems.length} items in the same category`);
-                
-                for (const foundItem of foundItems) {
-                    try {
-                        console.log(`Comparing lost item ${savedItem._id} with found item ${foundItem._id}`);
-                        
-                        // Call the matching service to get a similarity score
-                        try {
-                            const response = await axios.post(`${process.env.PYTHON_API_URL || 'http://localhost:5001'}/match`, {
-                                lost_desc: savedItem.description,
-                                found_desc: foundItem.description
-                            }, { timeout: 8000 });
-                            
-                            console.log(`Match result: similarity_score: ${response.data.similarity_score}`);
-                            
-                            // Temporarily lower the threshold for testing - change from 0.5 to 0.1
-                            if (response.data && response.data.similarity_score >= 0.1) {
-                                // Validate and parse user IDs for both items
-                                let foundUserObjectId = null;
-                                
-                                if (foundItem.userId) {
-                                    if (mongoose.Types.ObjectId.isValid(foundItem.userId)) {
-                                        foundUserObjectId = foundItem.userId;
-                                    } else if (typeof foundItem.userId === 'string') {
-                                        if (mongoose.Types.ObjectId.isValid(foundItem.userId)) {
-                                            foundUserObjectId = new mongoose.Types.ObjectId(foundItem.userId);
-                                        }
-                                    }
-                                }
-                                
-                                // Log the user IDs for debugging
-                                console.log('Creating match with found user ID:', foundItem.userId);
-                                console.log('Found user ID type:', typeof foundItem.userId);
-                                console.log('Creating match with lost user ID:', savedItem.userId);
-                                console.log('Lost user ID type:', typeof savedItem.userId);
-                                
-                                if (!foundUserObjectId) {
-                                    console.log('Cannot create match - invalid found user ID');
-                                    continue; // Skip this match
-                                }
-                                
-                                // Create a match record with validated IDs
-                                const match = new Match({
-                                    lostItemId: savedItem._id,
-                                    lostUserId: userIdObj,
-                                    foundItemId: foundItem._id,
-                                    foundUserId: foundUserObjectId,
-                                    similarityScore: response.data.similarity_score,
-                                    status: 'pending'
-                                });
-                                
-                                try {
-                                    await match.save();
-                                    console.log(`Created match between lost item ${savedItem._id} and found item ${foundItem._id}`);
-                                    console.log(`Match details: Lost user ${userIdObj}, Found user ${foundUserObjectId}`);
-                                    
-                                    // Create notifications for both users
-                                    if (foundItem.userId) {
-                                        try {
-                                            await createNotification(
-                                                foundItem.userId,
-                                                'match_found',
-                                                'Potential Match Found',
-                                                `We found a potential match for your found item: ${foundItem.itemName || foundItem.description.substring(0, 30)}`,
-                                                { matchId: match._id, itemId: foundItem._id }
-                                            );
-                                        } catch (notifyError) {
-                                            console.error('Failed to send notification:', notifyError);
-                                        }
-                                    }
-                                } catch (saveError) {
-                                    console.error('Failed to save match:', saveError);
-                                }
-                            }
-                        } catch (matchServiceError) {
-                            console.error('Error with matching service:', matchServiceError.message);
-                            // Continue to next item even if there's an error with this one
-                        }
-                    } catch (itemMatchError) {
-                        console.error('Error matching specific item:', itemMatchError.message);
-                        // Continue to next item
-                    }
-                }
-            } catch (matchError) {
-                console.error('Error finding matches:', matchError);
-                // Matching failed but the item was already saved successfully
-            }
-        } catch (saveError) {
-            console.error('Error saving lost item:', saveError);
-            if (saveError.name === 'ValidationError') {
-                const validationErrors = Object.keys(saveError.errors).map(field => 
-                    `${field}: ${saveError.errors[field].message}`
-                );
-                return res.status(400).json({ 
-                    status: 'validation_error', 
-                    message: 'Validation error', 
-                    errors: validationErrors 
-                });
-            }
-            throw saveError; // Re-throw for the outer catch
-        }
-    } catch (error) {
-        console.error('Error reporting lost item:', error);
-        // Send error response only if we haven't already sent a success response
-        if (!res.headersSent) {
-            res.status(500).json({ 
-                status: 'error', 
-                message: 'Server error reporting lost item',
-                details: error.message 
-            });
-        }
-    }
-});
-
-// Add alias for /lostitem to match frontend
 app.post('/lostitem', upload.single('photo'), async (req, res) => {
     try {
         console.log('Received lost item report:', req.body);
@@ -1046,12 +853,57 @@ app.post('/lostitem', upload.single('photo'), async (req, res) => {
         });
 
         try {
+            // Save the lost item
             const savedItem = await lostItem.save();
+            
+            // Send success response first to not keep user waiting
             res.status(201).json({ 
                 status: 'success', 
                 message: 'Lost item reported successfully',
                 itemId: savedItem._id
             });
+            
+            // After response sent, notify all users about the lost item
+            try {
+                // Get all users except the one who reported the lost item
+                const allUsers = await User.find({}, '_id');
+                console.log(`Found ${allUsers.length} users to notify about lost item`);
+                
+                // For each user, create a notification
+                for (const user of allUsers) {
+                    // Skip the user who reported the item
+                    if (userId && user._id.toString() === userId.toString()) {
+                        console.log(`Skipping notification to reporting user: ${userId}`);
+                        continue;
+                    }
+                    
+                    try {
+                        const notification = new Notification({
+                            userId: user._id,
+                            type: 'lost_item_report',
+                            title: 'New Lost Item Reported',
+                            message: `Someone lost a ${category}: ${itemName || description.substring(0, 30)}`,
+                            read: false,
+                            lostItemId: savedItem._id,
+                            location: location,
+                            time: time,
+                            date: date,
+                            category: category,
+                            itemName: itemName || description.substring(0, 30)
+                        });
+                        
+                        await notification.save();
+                        console.log(`Notification sent to user ${user._id} about lost item ${savedItem._id}`);
+                    } catch (notificationError) {
+                        console.error(`Error creating notification for user ${user._id}:`, notificationError);
+                        // Continue to next user even if this one fails
+                    }
+                }
+            } catch (notificationError) {
+                console.error('Error sending notifications about lost item:', notificationError);
+                // Notifications failed but item was already saved and response sent
+            }
+            
         } catch (saveError) {
             console.error('Error saving lost item:', saveError);
             if (saveError.name === 'ValidationError') {
@@ -1068,11 +920,14 @@ app.post('/lostitem', upload.single('photo'), async (req, res) => {
         }
     } catch (error) {
         console.error('Error reporting lost item:', error);
-        res.status(500).json({ 
-            status: 'error', 
-            message: 'Server error reporting lost item',
-            details: error.message 
-        });
+        // Send error response only if we haven't already sent a success response
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                status: 'error', 
+                message: 'Server error reporting lost item',
+                details: error.message 
+            });
+        }
     }
 });
 
@@ -2049,4 +1904,70 @@ app.get('/api/dev/all-matches', async (req, res) => {
             error: error.message
         });
     }
+});
+
+// **Get all lost items**
+app.get('/all-lost-items', getAllLostItems);
+app.get('/api/all-lost-items', getAllLostItems);
+
+// Function to handle getting all lost items
+async function getAllLostItems(req, res) {
+    try {
+        console.log('Received request for all lost items');
+        
+        // Fetch all lost items from the database
+        const lostItems = await LostItem.find({})
+            .sort({ createdAt: -1 })
+            .limit(50); // Limit to 50 most recent items
+        
+        console.log(`Found ${lostItems.length} lost items in database`);
+        
+        // Process items for the response
+        const processedItems = lostItems.map(item => {
+            const processedItem = item.toObject();
+            
+            // If the item has a photo, make sure it's properly handled
+            if (processedItem.photo) {
+                try {
+                    // Check if photo is a Buffer or already processed
+                    if (Buffer.isBuffer(processedItem.photo)) {
+                        processedItem.photo = processedItem.photo.toString('base64');
+                    } else if (processedItem.photo.buffer) {
+                        processedItem.photo = processedItem.photo.buffer.toString('base64');
+                    } else if (processedItem.photo.data) {
+                        processedItem.photo = processedItem.photo.data.toString('base64');
+                    }
+                } catch (photoError) {
+                    console.error('Error processing photo:', photoError);
+                    processedItem.photo = null; // Set to null if there's an error
+                }
+            }
+            
+            return processedItem;
+        });
+        
+        console.log(`Sending ${processedItems.length} processed lost items`);
+        
+        res.status(200).json({
+            status: 'success',
+            count: processedItems.length,
+            items: processedItems
+        });
+    } catch (error) {
+        console.error('Error fetching all lost items:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error fetching all lost items',
+            details: error.message
+        });
+    }
+}
+
+// **Check server connectivity**
+app.get('/check', (req, res) => {
+    res.status(200).json({
+        status: 'success',
+        message: 'Server is running',
+        timestamp: new Date().toISOString()
+    });
 });

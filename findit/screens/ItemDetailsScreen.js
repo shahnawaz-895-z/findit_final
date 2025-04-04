@@ -1,0 +1,356 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import API_CONFIG from '../config';
+
+const ItemDetailsScreen = ({ route, navigation }) => {
+  const { itemId, itemType } = route.params;
+  const [item, setItem] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchItemDetails();
+  }, []);
+
+  const fetchItemDetails = async () => {
+    try {
+      setLoading(true);
+      
+      const url = `${API_CONFIG.API_URL}/${itemType === 'lost' ? 'lostitem' : 'founditem'}/${itemId}`;
+      const token = await AsyncStorage.getItem('authToken');
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setItem(data.item);
+      } else {
+        setError(data.message || 'Failed to fetch item details');
+      }
+    } catch (error) {
+      console.error('Error fetching item details:', error);
+      setError('Failed to fetch item details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const formatTime = (timeString) => {
+    const time = new Date(timeString);
+    return time.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3d0c45" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Icon name="alert-circle-outline" size={64} color="#dc3545" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={styles.buttonContainer}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.buttonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!item) {
+    return (
+      <View style={styles.errorContainer}>
+        <Icon name="information-outline" size={64} color="#6c757d" />
+        <Text style={styles.errorText}>Item not found</Text>
+        <TouchableOpacity
+          style={styles.buttonContainer}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.buttonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Icon 
+          name={itemType === 'lost' ? 'help-circle-outline' : 'checkbox-marked-circle-outline'} 
+          size={24} 
+          color="#3d0c45" 
+        />
+        <Text style={styles.headerTitle}>
+          {itemType === 'lost' ? 'Lost Item' : 'Found Item'}
+        </Text>
+      </View>
+
+      {/* Photo section */}
+      {item.photo && typeof item.photo === 'string' && item.photo.length > 0 ? (
+        <View style={styles.imageContainer}>
+          <Image 
+            source={{ uri: `data:image/jpeg;base64,${item.photo}` }}
+            style={styles.itemImage}
+            resizeMode="cover"
+          />
+        </View>
+      ) : (
+        <View style={[styles.imageContainer, styles.noImageContainer]}>
+          <Icon name="image-off" size={50} color="#ccc" />
+          <Text style={styles.noImageText}>No image available</Text>
+        </View>
+      )}
+
+      <View style={styles.detailsContainer}>
+        <Text style={styles.itemName}>{item.itemName}</Text>
+        
+        <View style={styles.infoRow}>
+          <Icon name="shape-outline" size={20} color="#555" />
+          <Text style={styles.infoLabel}>Category:</Text>
+          <Text style={styles.infoText}>{item.category}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Icon name="map-marker-outline" size={20} color="#555" />
+          <Text style={styles.infoLabel}>Location:</Text>
+          <Text style={styles.infoText}>{item.location}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Icon name="calendar-outline" size={20} color="#555" />
+          <Text style={styles.infoLabel}>Date:</Text>
+          <Text style={styles.infoText}>{formatDate(item.date)}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Icon name="clock-outline" size={20} color="#555" />
+          <Text style={styles.infoLabel}>Time:</Text>
+          <Text style={styles.infoText}>{formatTime(item.time)}</Text>
+        </View>
+
+        <View style={styles.descriptionContainer}>
+          <Text style={styles.descriptionLabel}>Description:</Text>
+          <Text style={styles.descriptionText}>{item.description}</Text>
+        </View>
+
+        {/* Category-specific details */}
+        {item.category === 'Electronics' && (
+          <View style={styles.categoryDetailsContainer}>
+            <Text style={styles.categoryTitle}>Electronics Details</Text>
+            {item.brand && (
+              <View style={styles.infoRow}>
+                <Icon name="tag-outline" size={20} color="#555" />
+                <Text style={styles.infoLabel}>Brand:</Text>
+                <Text style={styles.infoText}>{item.brand}</Text>
+              </View>
+            )}
+            {item.model && (
+              <View style={styles.infoRow}>
+                <Icon name="information-outline" size={20} color="#555" />
+                <Text style={styles.infoLabel}>Model:</Text>
+                <Text style={styles.infoText}>{item.model}</Text>
+              </View>
+            )}
+            {item.color && (
+              <View style={styles.infoRow}>
+                <Icon name="palette-outline" size={20} color="#555" />
+                <Text style={styles.infoLabel}>Color:</Text>
+                <Text style={styles.infoText}>{item.color}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Contact information */}
+        <View style={styles.contactContainer}>
+          <Text style={styles.contactTitle}>Contact Information</Text>
+          <Text style={styles.contactText}>{item.contact}</Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={styles.buttonContainer}
+        onPress={() => navigation.goBack()}
+      >
+        <Text style={styles.buttonText}>Go Back</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#6c757d',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#3d0c45',
+    marginLeft: 10,
+  },
+  imageContainer: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemImage: {
+    width: '100%',
+    height: '100%',
+  },
+  detailsContainer: {
+    padding: 16,
+  },
+  itemName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  infoLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginLeft: 8,
+    marginRight: 8,
+  },
+  infoText: {
+    fontSize: 16,
+    color: '#555',
+    flex: 1,
+  },
+  descriptionContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+  },
+  descriptionLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+  },
+  descriptionText: {
+    fontSize: 16,
+    color: '#555',
+    lineHeight: 24,
+  },
+  categoryDetailsContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
+  categoryTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 12,
+  },
+  contactContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
+  contactTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+  },
+  contactText: {
+    fontSize: 16,
+    color: '#555',
+  },
+  buttonContainer: {
+    backgroundColor: '#3d0c45',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    margin: 16,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  noImageContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noImageText: {
+    fontSize: 16,
+    color: '#ccc',
+  },
+});
+
+export default ItemDetailsScreen; 

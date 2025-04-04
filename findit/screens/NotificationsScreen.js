@@ -7,7 +7,9 @@ import {
     TouchableOpacity,
     RefreshControl,
     AppState,
-    Platform
+    Platform,
+    Image,
+    ActivityIndicator
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,19 +25,96 @@ export default function NotificationsScreen({ navigation }) {
     const [hasMore, setHasMore] = useState(true);
     const [lastPolled, setLastPolled] = useState(Date.now());
     const isFocused = useIsFocused();
+    const [lostItems, setLostItems] = useState([]);
+    const [loadingLostItems, setLoadingLostItems] = useState(true);
 
     // Get userId from storage
     const getUserId = async () => {
         try {
+            console.log('Getting userData from AsyncStorage');
             const userData = await AsyncStorage.getItem('userData');
-            if (userData) {
-                const { _id } = JSON.parse(userData);
-                return _id;
+            console.log('userData from storage:', userData);
+            
+            if (!userData) {
+                console.log('No userData found in AsyncStorage');
+                
+                // Try to get user ID from token as fallback
+                try {
+                    const token = await AsyncStorage.getItem('authToken');
+                    if (token) {
+                        console.log('Token found, will use this for authenticated requests');
+                        // We don't extract userId from token here, just acknowledge we have a token
+                        // for authenticated requests
+                    } else {
+                        console.log('No auth token found in AsyncStorage');
+                    }
+                } catch (tokenError) {
+                    console.error('Error getting authToken:', tokenError);
+                }
+                
+                return null;
             }
-            return null;
+            
+            try {
+                const parsedData = JSON.parse(userData);
+                console.log('Parsed userData:', parsedData);
+                
+                if (parsedData && parsedData._id) {
+                    console.log('Found userId:', parsedData._id);
+                    return parsedData._id;
+                } else {
+                    console.log('userData exists but contains no _id property');
+                    return null;
+                }
+            } catch (parseError) {
+                console.error('Error parsing userData JSON:', parseError);
+                console.log('Raw userData content:', userData);
+                return null;
+            }
         } catch (error) {
-            console.error('Error getting userId:', error);
+            console.error('Error getting userId from AsyncStorage:', error);
             return null;
+        }
+    };
+
+    // Fetch all lost items
+    const fetchAllLostItems = async () => {
+        try {
+            setLoadingLostItems(true);
+            console.log('Fetching all lost items...');
+            console.log('API URL:', API_CONFIG.API_URL);
+            
+            // Use simple fetch without special headers or options to troubleshoot
+            const response = await fetch(`${API_CONFIG.API_URL}/all-lost-items`);
+            console.log('Response status:', response.status);
+            
+            // If the response is not OK, try the alternate URL
+            if (!response.ok) {
+                console.log('First attempt failed, trying alternate URL...');
+                const altResponse = await fetch(`${API_CONFIG.API_URL}/api/all-lost-items`);
+                
+                if (!altResponse.ok) {
+                    console.error('Both attempts failed');
+                    setLostItems([]);
+                    setLoadingLostItems(false);
+                    return;
+                }
+                
+                const data = await altResponse.json();
+                console.log('Got data from alternate URL:', data.count || 0, 'items');
+                setLostItems(data.items || []);
+                setLoadingLostItems(false);
+                return;
+            }
+            
+            const data = await response.json();
+            console.log('Got data from primary URL:', data.count || 0, 'items');
+            setLostItems(data.items || []);
+        } catch (error) {
+            console.error('Error fetching all lost items:', error.message);
+            setLostItems([]);
+        } finally {
+            setLoadingLostItems(false);
         }
     };
 
@@ -185,6 +264,7 @@ export default function NotificationsScreen({ navigation }) {
         if (isFocused) {
             setLoading(true);
             fetchNotifications(1, true);
+            fetchAllLostItems();
         }
     }, [isFocused]);
 
@@ -192,6 +272,7 @@ export default function NotificationsScreen({ navigation }) {
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         fetchNotifications(1, true);
+        fetchAllLostItems();
     }, []);
 
     // Load more notifications
@@ -209,9 +290,131 @@ export default function NotificationsScreen({ navigation }) {
                     return 'target';
                 case 'message_received':
                     return 'message-text';
+                case 'lost_item_report':
+                    return 'alert-outline';
+                case 'lost_item_repost':
+                    return 'alert-circle-outline';
                 default:
                     return 'bell';
             }
+        };
+
+        const handleNotificationPress = (notification) => {
+            markAsRead(notification._id);
+            
+            // Navigate based on notification type
+            if (notification.type === 'message_received' && notification.chatId) {
+                navigation.navigate('Chat', { chatId: notification.chatId });
+            } else if (notification.type === 'match_found' && notification.matchId) {
+                navigation.navigate('MatchDetails', { matchId: notification.matchId });
+            } else if ((notification.type === 'lost_item_report' || notification.type === 'lost_item_repost') && notification.lostItemId) {
+                // Navigate to lost item details
+                navigation.navigate('ItemDetails', { 
+                    itemId: notification.lostItemId,
+                    itemType: 'lost'
+                });
+            }
+        };
+
+        // Format additional details for item notifications
+        const renderAdditionalDetails = (notification) => {
+            if (notification.type === 'lost_item_report' || notification.type === 'lost_item_repost') {
+                return (
+                    <View style={styles.notificationDetails}>
+                        {notification.location && (
+                            <View style={styles.detailRow}>
+                                <Icon name="map-marker" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.location}</Text>
+                            </View>
+                        )}
+                        {notification.date && (
+                            <View style={styles.detailRow}>
+                                <Icon name="calendar" size={16} color="#555" />
+                                <Text style={styles.detailText}>
+                                    {new Date(notification.date).toLocaleDateString()}
+                                </Text>
+                            </View>
+                        )}
+                        {notification.time && (
+                            <View style={styles.detailRow}>
+                                <Icon name="clock-outline" size={16} color="#555" />
+                                <Text style={styles.detailText}>
+                                    {new Date(notification.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </Text>
+                            </View>
+                        )}
+                        {notification.category && (
+                            <View style={styles.detailRow}>
+                                <Icon name="tag" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.category}</Text>
+                            </View>
+                        )}
+                        {notification.itemName && (
+                            <View style={styles.detailRow}>
+                                <Icon name="information-outline" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.itemName}</Text>
+                            </View>
+                        )}
+                        <TouchableOpacity 
+                            style={styles.viewButtonContainer}
+                            onPress={() => {
+                                markAsRead(notification._id);
+                                if (notification.lostItemId) {
+                                    navigation.navigate('ItemDetails', { 
+                                        itemId: notification.lostItemId,
+                                        itemType: 'lost'
+                                    });
+                                }
+                            }}
+                        >
+                            <Text style={styles.viewButtonText}>View Item Details</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+            } else if (notification.type === 'match_found') {
+                return (
+                    <View style={styles.notificationDetails}>
+                        {notification.location && (
+                            <View style={styles.detailRow}>
+                                <Icon name="map-marker" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.location}</Text>
+                            </View>
+                        )}
+                        {notification.date && (
+                            <View style={styles.detailRow}>
+                                <Icon name="calendar" size={16} color="#555" />
+                                <Text style={styles.detailText}>
+                                    {new Date(notification.date).toLocaleDateString()}
+                                </Text>
+                            </View>
+                        )}
+                        {notification.category && (
+                            <View style={styles.detailRow}>
+                                <Icon name="tag" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.category}</Text>
+                            </View>
+                        )}
+                        {notification.itemName && (
+                            <View style={styles.detailRow}>
+                                <Icon name="information-outline" size={16} color="#555" />
+                                <Text style={styles.detailText}>{notification.itemName}</Text>
+                            </View>
+                        )}
+                        <TouchableOpacity 
+                            style={styles.viewButtonContainer}
+                            onPress={() => {
+                                markAsRead(notification._id);
+                                if (notification.matchId) {
+                                    navigation.navigate('MatchDetails', { matchId: notification.matchId });
+                                }
+                            }}
+                        >
+                            <Text style={styles.viewButtonText}>View Match Details</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+            }
+            return null;
         };
 
         return (
@@ -220,15 +423,7 @@ export default function NotificationsScreen({ navigation }) {
                     styles.notificationItem,
                     !item.read && styles.unreadNotification
                 ]}
-                onPress={() => {
-                    markAsRead(item._id);
-                    // Navigate based on notification type
-                    if (item.type === 'message_received' && item.chatId) {
-                        navigation.navigate('Chat', { chatId: item.chatId });
-                    } else if (item.type === 'match_found' && item.matchId) {
-                        navigation.navigate('MatchDetails', { matchId: item.matchId });
-                    }
-                }}
+                onPress={() => handleNotificationPress(item)}
             >
                 <View style={styles.notificationContent}>
                     <Icon
@@ -240,11 +435,76 @@ export default function NotificationsScreen({ navigation }) {
                     <View style={styles.textContainer}>
                         <Text style={styles.title}>{item.title}</Text>
                         <Text style={styles.message}>{item.message}</Text>
+                        {renderAdditionalDetails(item)}
                         <Text style={styles.time}>
                             {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
                         </Text>
                     </View>
                 </View>
+            </TouchableOpacity>
+        );
+    };
+
+    // Render a lost item
+    const renderLostItem = ({ item }) => {
+        const formattedDate = item.date ? new Date(item.date).toLocaleDateString() : 'Unknown';
+        const formattedTime = item.time ? new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+        
+        // Safely handle photo data
+        const hasPhoto = item.photo && typeof item.photo === 'string' && item.photo.length > 0;
+        
+        return (
+            <TouchableOpacity
+                style={styles.lostItemContainer}
+                onPress={() => navigation.navigate('ItemDetails', { itemId: item._id, itemType: 'lost' })}
+            >
+                <View style={styles.lostItemHeader}>
+                    <Icon name="alert-outline" size={24} color="#3d0c45" />
+                    <Text style={styles.lostItemTitle}>{item.itemName || 'Lost Item'}</Text>
+                </View>
+                
+                <View style={styles.lostItemDetails}>
+                    {hasPhoto ? (
+                        <Image 
+                            source={{ uri: `data:image/jpeg;base64,${item.photo}` }}
+                            style={styles.lostItemImage}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <View style={[styles.lostItemImage, styles.noImagePlaceholder]}>
+                            <Icon name="image-off" size={30} color="#ccc" />
+                        </View>
+                    )}
+                    
+                    <View style={styles.lostItemInfo}>
+                        <View style={styles.detailRow}>
+                            <Icon name="map-marker" size={16} color="#555" />
+                            <Text style={styles.detailText}>{item.location || 'Unknown location'}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="calendar" size={16} color="#555" />
+                            <Text style={styles.detailText}>{formattedDate}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="clock-outline" size={16} color="#555" />
+                            <Text style={styles.detailText}>{formattedTime}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="tag" size={16} color="#555" />
+                            <Text style={styles.detailText}>{item.category || 'Uncategorized'}</Text>
+                        </View>
+                    </View>
+                </View>
+                
+                <TouchableOpacity 
+                    style={styles.viewButtonContainer}
+                    onPress={() => navigation.navigate('ItemDetails', { itemId: item._id, itemType: 'lost' })}
+                >
+                    <Text style={styles.viewButtonText}>View Details</Text>
+                </TouchableOpacity>
             </TouchableOpacity>
         );
     };
@@ -261,28 +521,69 @@ export default function NotificationsScreen({ navigation }) {
                 </TouchableOpacity>
             </View>
 
-            <FlatList
-                data={notifications}
-                renderItem={renderNotification}
-                keyExtractor={item => item._id}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        colors={['#3d0c45']}
+            {/* Lost Items Section */}
+            <View style={styles.lostItemsSection}>
+                <View style={styles.sectionHeader}>
+                    <Icon name="alert-circle-outline" size={24} color="#3d0c45" />
+                    <Text style={styles.sectionTitle}>Lost Items</Text>
+                </View>
+                
+                {loadingLostItems ? (
+                    <ActivityIndicator size="large" color="#3d0c45" style={styles.loader} />
+                ) : lostItems.length > 0 ? (
+                    <FlatList
+                        data={lostItems}
+                        renderItem={renderLostItem}
+                        keyExtractor={item => item._id || Math.random().toString()}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.lostItemsList}
                     />
-                }
-                onEndReached={loadMore}
-                onEndReachedThreshold={0.5}
-                ListEmptyComponent={
-                    !loading && (
-                        <View style={styles.emptyContainer}>
-                            <Icon name="bell-off" size={48} color="#666" />
-                            <Text style={styles.emptyText}>No notifications yet</Text>
-                        </View>
-                    )
-                }
-            />
+                ) : (
+                    <View style={styles.emptyContainer}>
+                        <Icon name="magnify" size={48} color="#666" />
+                        <Text style={styles.emptyText}>No lost items found at this time</Text>
+                        <TouchableOpacity
+                            style={styles.refreshButton}
+                            onPress={fetchAllLostItems}
+                        >
+                            <Text style={styles.refreshButtonText}>Refresh</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
+
+            {/* Notifications Section */}
+            <View style={styles.notificationsSection}>
+                <View style={styles.sectionHeader}>
+                    <Icon name="bell-outline" size={24} color="#3d0c45" />
+                    <Text style={styles.sectionTitle}>Recent Notifications</Text>
+                </View>
+                
+                <FlatList
+                    data={notifications}
+                    renderItem={renderNotification}
+                    keyExtractor={item => item._id}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#3d0c45']}
+                        />
+                    }
+                    onEndReached={loadMore}
+                    onEndReachedThreshold={0.5}
+                    ListEmptyComponent={
+                        !loading && (
+                            <View style={styles.emptyContainer}>
+                                <Icon name="bell-off" size={48} color="#666" />
+                                <Text style={styles.emptyText}>No notifications yet</Text>
+                            </View>
+                        )
+                    }
+                    style={styles.notificationsList}
+                />
+            </View>
         </View>
     );
 }
@@ -313,6 +614,74 @@ const styles = StyleSheet.create({
         color: '#3d0c45',
         fontSize: 14
     },
+    // Lost Items Section
+    lostItemsSection: {
+        backgroundColor: '#fff',
+        padding: 16,
+        marginBottom: 8,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#3d0c45',
+        marginLeft: 8,
+    },
+    lostItemsList: {
+        minHeight: 220,
+    },
+    lostItemContainer: {
+        width: 280,
+        backgroundColor: '#f8f0ff',
+        borderRadius: 8,
+        padding: 12,
+        marginRight: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    lostItemHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    lostItemTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 8,
+        color: '#3d0c45',
+    },
+    lostItemDetails: {
+        flexDirection: 'row',
+    },
+    lostItemImage: {
+        width: 80,
+        height: 80,
+        borderRadius: 4,
+        marginRight: 12,
+    },
+    lostItemInfo: {
+        flex: 1,
+    },
+    loader: {
+        marginVertical: 20,
+    },
+    // Notifications Section
+    notificationsSection: {
+        flex: 1,
+        backgroundColor: '#fff',
+        paddingTop: 16,
+    },
+    notificationsList: {
+        flex: 1,
+    },
+    // Existing styles
     notificationItem: {
         backgroundColor: '#fff',
         padding: 16,
@@ -348,7 +717,6 @@ const styles = StyleSheet.create({
         color: '#6c757d'
     },
     emptyContainer: {
-        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 32
@@ -358,5 +726,50 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
         textAlign: 'center'
-    }
+    },
+    detailRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    detailText: {
+        fontSize: 12,
+        color: '#555',
+        marginLeft: 4,
+    },
+    notificationDetails: {
+        marginTop: 8,
+        backgroundColor: '#f5f5f5',
+        padding: 8,
+        borderRadius: 4,
+    },
+    viewButtonContainer: {
+        backgroundColor: '#3d0c45',
+        padding: 8,
+        borderRadius: 4,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    viewButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    noImagePlaceholder: {
+        backgroundColor: '#f0f0f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 4,
+    },
+    refreshButton: {
+        padding: 12,
+        backgroundColor: '#3d0c45',
+        borderRadius: 4,
+        marginTop: 16
+    },
+    refreshButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '500'
+    },
 }); 
