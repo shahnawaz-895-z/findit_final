@@ -10,7 +10,10 @@ import {
     Dimensions,
     ScrollView,
     FlatList,
-    RefreshControl
+    RefreshControl,
+    StatusBar,
+    SafeAreaView,
+    Platform
 } from 'react-native';
 import axios from 'axios';
 import API_CONFIG from '../config';
@@ -18,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
 // Create a regular axios instance instead of using useMemo outside component
 const api = axios.create({
@@ -48,6 +52,13 @@ export default function MatchingScreen({ navigation, route }) {
     // Add pagination support for better performance
     const [page, setPage] = useState(1);
     const [hasMoreMatches, setHasMoreMatches] = useState(true);
+
+    // Custom StatusBar component to ensure visibility
+    const CustomStatusBar = ({backgroundColor, ...props}) => (
+        <View style={[styles.statusBar, { backgroundColor }]}>
+            <StatusBar translucent backgroundColor={backgroundColor} {...props} />
+        </View>
+    );
 
     // Fetch user ID on component mount - using useCallback
     const getUserId = useCallback(async () => {
@@ -493,285 +504,216 @@ export default function MatchingScreen({ navigation, route }) {
         );
     }, [userId, getMatchColor, navigateToChat]);
 
-    // Add a footer for the FlatList to show loading indicator when loading more data
-    const renderFooter = useCallback(() => {
-        if (!isLoadingMatches || refreshing) return null;
-        return (
-            <View style={styles.footerLoading}>
-                <ActivityIndicator size="small" color="#3d0c45" />
-                <Text style={styles.footerText}>Loading more matches...</Text>
-            </View>
-        );
-    }, [isLoadingMatches, refreshing]);
-
-    // Add function to handle loading more matches when reaching end of list
-    const handleLoadMore = useCallback(() => {
-        if (!isLoadingMatches && hasMoreMatches && userId) {
-            fetchUserMatches(userId);
-        }
-    }, [isLoadingMatches, hasMoreMatches, userId, fetchUserMatches]);
-
-    // Skeleton screen component for when matches are loading initially
-    const MatchSkeleton = useCallback(() => (
-        <View style={styles.skeletonContainer}>
-            {[1, 2, 3].map((_, index) => (
-                <View key={index} style={styles.matchCard}>
-                    <View style={styles.matchContent}>
-                        <View style={styles.skeletonLine} />
-                        <View style={[styles.skeletonLine, { width: '70%' }]} />
-                        <View style={styles.skeletonDescription} />
-                        <View style={[styles.skeletonLine, { width: '50%' }]} />
-                    </View>
-                    <View style={styles.skeletonButton} />
-                </View>
-            ))}
-        </View>
-    ), []);
-
     return (
-        <View style={styles.container}>
-            {/* Tab Navigation */}
-            <View style={styles.tabContainer}>
+        <SafeAreaView style={styles.safeArea}>
+            <CustomStatusBar backgroundColor="#3d0c45" barStyle="light-content" />
+            
+            <View style={styles.header}>
                 <TouchableOpacity 
-                    style={[
-                        styles.tabButton, 
-                        activeTab === 'check' && styles.activeTab
-                    ]}
-                    onPress={() => setActiveTab('check')}
+                    style={styles.backButton}
+                    onPress={() => navigation.goBack()}
                 >
-                    <Text style={[
-                        styles.tabButtonText,
-                        activeTab === 'check' && styles.activeTabText
-                    ]}>
-                        Manual Check
-                    </Text>
+                    <Ionicons name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
-                <TouchableOpacity 
-                    style={[
-                        styles.tabButton, 
-                        activeTab === 'view' && styles.activeTab
-                    ]}
-                    onPress={() => {
-                        setActiveTab('view');
-                        if (userId) {
-                            setPage(1);
-                            setHasMoreMatches(true);
-                            fetchUserMatches(userId, true);
-                        }
-                    }}
-                >
-                    <Text style={[
-                        styles.tabButtonText,
-                        activeTab === 'view' && styles.activeTabText
-                    ]}>
-                        View Matches
-                    </Text>
-                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Match Items</Text>
+                <View style={{width: 40}} />
             </View>
-
-            {/* Manual Check Content */}
-            {activeTab === 'check' && (
-                <ScrollView style={styles.tabContent} contentContainerStyle={styles.contentContainer}>
-                    <Text style={styles.title}>Manual Match Check</Text>
-                    <Text style={styles.subtitle}>
-                        This tool is for testing purposes only. To find real matches,
-                        please report lost and found items.
-                    </Text>
-
-                    <View style={styles.inputContainer}>
-                        <View style={styles.inputHeader}>
-                            <Text style={styles.label}>Lost Item Description:</Text>
-                            <TouchableOpacity onPress={() => browseItems('lost')}>
-                                <Text style={styles.browseText}>Browse Items</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <TextInput
-                            style={styles.input}
-                            value={lostDesc}
-                            onChangeText={setLostDesc}
-                            placeholder="Enter lost item details"
-                            multiline
-                            numberOfLines={4}
-                            textAlignVertical="top"
-                            placeholderTextColor="#666"
-                        />
-                        {lostItemId && (
-                            <Text style={styles.selectedItemText}>
-                                Item from database selected
-                            </Text>
-                        )}
-                    </View>
-
-                    <View style={styles.inputContainer}>
-                        <View style={styles.inputHeader}>
-                            <Text style={styles.label}>Found Item Description:</Text>
-                            <TouchableOpacity onPress={() => browseItems('found')}>
-                                <Text style={styles.browseText}>Browse Items</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <TextInput
-                            style={styles.input}
-                            value={foundDesc}
-                            onChangeText={setFoundDesc}
-                            placeholder="Enter found item details"
-                            multiline
-                            numberOfLines={4}
-                            textAlignVertical="top"
-                            placeholderTextColor="#666"
-                        />
-                        {foundItemId && (
-                            <Text style={styles.selectedItemText}>
-                                Item from database selected
-                            </Text>
-                        )}
-                    </View>
-
+            
+            <View style={styles.container}>
+                {/* Tab navigation */}
+                <View style={styles.tabs}>
                     <TouchableOpacity 
-                        style={[styles.matchButton, isLoading && styles.disabledButton]}
-                        onPress={checkMatch}
-                        disabled={isLoading}
+                        style={[styles.tab, activeTab === 'view' && styles.activeTab]}
+                        onPress={() => setActiveTab('view')}
                     >
-                        {isLoading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.matchButtonText}>Check Match</Text>
-                        )}
+                        <Text style={[styles.tabText, activeTab === 'view' && styles.activeTabText]}>
+                            View Matches
+                        </Text>
                     </TouchableOpacity>
-
-                    {error && (
-                        <View style={styles.errorContainer}>
-                            <Text style={styles.errorText}>{error}</Text>
-                        </View>
-                    )}
-
-                    {similarity !== null && !error && (
-                        <View style={styles.resultContainer}>
-                            <Text style={styles.resultLabel}>Similarity Score:</Text>
-                            <Text 
-                                style={[
-                                    styles.resultScore,
-                                    { color: getMatchColor(similarity) }
-                                ]}
-                            >
-                                {(similarity * 100).toFixed(1)}%
-                            </Text>
-                            
-                            <Text style={styles.resultExplanation}>
-                                {similarity >= 0.7 ? 
-                                    'High probability of a match!' : 
-                                    similarity >= 0.4 ? 
-                                        'Moderate similarity detected.' : 
-                                        'Low similarity. Likely not a match.'}
-                            </Text>
-
-                            {processedText && (
-                                <View style={styles.processedTextContainer}>
-                                    <Text style={styles.processedTextTitle}>Processed Text:</Text>
-                                    <View style={styles.processedTextItem}>
-                                        <Text style={styles.processedTextLabel}>Lost:</Text>
-                                        <Text style={styles.processedTextValue}>{processedText.lost}</Text>
-                                    </View>
-                                    <View style={styles.processedTextItem}>
-                                        <Text style={styles.processedTextLabel}>Found:</Text>
-                                        <Text style={styles.processedTextValue}>{processedText.found}</Text>
-                                    </View>
-                                </View>
-                            )}
-
-                            {similarity >= 0.4 && lostItemId && foundItemId && (
+                    <TouchableOpacity 
+                        style={[styles.tab, activeTab === 'check' && styles.activeTab]}
+                        onPress={() => setActiveTab('check')}
+                    >
+                        <Text style={[styles.tabText, activeTab === 'check' && styles.activeTabText]}>
+                            Check Match
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+                
+                {/* View matches tab */}
+                {activeTab === 'view' && (
+                    <View style={styles.matchesContainer}>
+                        {isLoadingMatches && matches.length === 0 ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color="#3d0c45" />
+                                <Text style={styles.loadingText}>Loading your matches...</Text>
+                            </View>
+                        ) : matches.length > 0 ? (
+                            <FlatList
+                                data={matches}
+                                renderItem={renderMatchItem}
+                                keyExtractor={item => item._id}
+                                contentContainerStyle={styles.matchesList}
+                                refreshControl={
+                                    <RefreshControl
+                                        refreshing={refreshing}
+                                        onRefresh={onRefresh}
+                                        colors={['#3d0c45']}
+                                    />
+                                }
+                                onEndReached={() => fetchUserMatches(userId)}
+                                onEndReachedThreshold={0.5}
+                                ListFooterComponent={
+                                    isLoadingMatches && matches.length > 0 ? (
+                                        <ActivityIndicator 
+                                            size="small" 
+                                            color="#3d0c45" 
+                                            style={styles.footerLoader} 
+                                        />
+                                    ) : null
+                                }
+                            />
+                        ) : (
+                            <View style={styles.emptyContainer}>
+                                <Ionicons name="search" size={64} color="#ccc" />
+                                <Text style={styles.emptyText}>
+                                    No matches found
+                                </Text>
+                                <Text style={styles.emptySubtext}>
+                                    When potential matches for your items are found, they will appear here.
+                                </Text>
                                 <TouchableOpacity 
-                                    style={styles.recordMatchButton}
-                                    onPress={recordMatch}
-                                    disabled={isLoading}
+                                    style={styles.refreshButton}
+                                    onPress={onRefresh}
                                 >
-                                    {isLoading ? (
-                                        <ActivityIndicator color="#fff" size="small" />
-                                    ) : (
-                                        <Text style={styles.recordMatchButtonText}>
-                                            Record this Match
-                                        </Text>
-                                    )}
+                                    <Text style={styles.refreshButtonText}>Refresh</Text>
                                 </TouchableOpacity>
-                            )}
+                            </View>
+                        )}
+                    </View>
+                )}
+                
+                {/* Check match tab */}
+                {activeTab === 'check' && (
+                    <ScrollView 
+                        style={styles.checkContainer}
+                        contentContainerStyle={styles.checkContent}
+                    >
+                        <Text style={styles.checkTitle}>
+                            Compare Descriptions
+                        </Text>
+                        <Text style={styles.checkSubtitle}>
+                            Enter the descriptions of a lost and found item to check if they might be a match
+                        </Text>
+                        
+                        <View style={styles.inputContainer}>
+                            <Text style={styles.inputLabel}>Lost Item Description</Text>
+                            <TextInput
+                                style={styles.input}
+                                multiline
+                                value={lostDesc}
+                                onChangeText={setLostDesc}
+                                placeholder="Enter the lost item description..."
+                                placeholderTextColor="#999"
+                            />
                         </View>
-                    )}
-                </ScrollView>
-            )}
-
-            {/* View Matches Content */}
-            {activeTab === 'view' && (
-                <View style={styles.tabContent}>
-                    <Text style={styles.title}>Your Matches</Text>
-                    
-                    <View style={styles.actionsContainer}>
-                        <TouchableOpacity 
-                            style={styles.reportButton}
-                            onPress={() => navigateToReport('lost')}
-                        >
-                            <Text style={styles.reportButtonText}>Report Lost Item</Text>
-                        </TouchableOpacity>
+                        
+                        <View style={styles.inputContainer}>
+                            <Text style={styles.inputLabel}>Found Item Description</Text>
+                            <TextInput
+                                style={styles.input}
+                                multiline
+                                value={foundDesc}
+                                onChangeText={setFoundDesc}
+                                placeholder="Enter the found item description..."
+                                placeholderTextColor="#999"
+                            />
+                        </View>
                         
                         <TouchableOpacity 
-                            style={styles.reportButton}
-                            onPress={() => navigateToReport('found')}
+                            style={styles.checkButton}
+                            onPress={checkMatch}
+                            disabled={isLoading}
                         >
-                            <Text style={styles.reportButtonText}>Report Found Item</Text>
+                            {isLoading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.checkButtonText}>Check Match</Text>
+                            )}
                         </TouchableOpacity>
-                    </View>
-                    
-                    <Text style={styles.instruction}>
-                        The system automatically matches your reported items with others.
-                    </Text>
-                    
-                    {isLoadingMatches && !refreshing && matches.length === 0 ? (
-                        <MatchSkeleton />
-                    ) : matches.length === 0 ? (
-                        <View style={styles.noMatchesContainer}>
-                            <Text style={styles.noMatchesText}>
-                                No matches found. Report lost or found items to find potential matches.
-                            </Text>
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={matches}
-                            renderItem={renderMatchItem}
-                            keyExtractor={(item, index) => (item._id ? item._id.toString() : `match-${index}`)}
-                            contentContainerStyle={styles.matchesList}
-                            refreshControl={
-                                <RefreshControl
-                                    refreshing={refreshing}
-                                    onRefresh={onRefresh}
-                                    colors={['#3d0c45']}
-                                />
-                            }
-                            onEndReached={handleLoadMore}
-                            onEndReachedThreshold={0.5}
-                            ListFooterComponent={renderFooter}
-                            windowSize={10} // Reduce rendering window for better performance
-                            removeClippedSubviews={true} // Important optimization for large lists
-                            maxToRenderPerBatch={5} // Limit number of items rendered per batch
-                            initialNumToRender={7} // Limit initial render amount
-                            updateCellsBatchingPeriod={50} // Lower the delay before rendering new cells
-                        />
-                    )}
-                </View>
-            )}
-        </View>
+                        
+                        {similarity !== null && (
+                            <View style={styles.resultContainer}>
+                                <Text style={styles.resultTitle}>
+                                    Match Result:
+                                </Text>
+                                <View style={styles.resultBarContainer}>
+                                    <View 
+                                        style={[
+                                            styles.resultBar, 
+                                            { width: `${similarity * 100}%` },
+                                            { backgroundColor: getMatchColor(similarity) }
+                                        ]}
+                                    />
+                                </View>
+                                <Text style={styles.resultPercent}>
+                                    {Math.round(similarity * 100)}% match
+                                </Text>
+                                <Text style={styles.resultConfidence}>
+                                    {similarity >= 0.7 ? 'High probability of a match!' : similarity >= 0.4 ? 'Moderate similarity detected.' : 'Low similarity. Likely not a match.'}
+                                </Text>
+                                {processedText && (
+                                    <View style={styles.processedContainer}>
+                                        <Text style={styles.processedTitle}>Processing Details:</Text>
+                                        <Text style={styles.processedText}>{processedText.lost}</Text>
+                                        <Text style={styles.processedText}>{processedText.found}</Text>
+                                    </View>
+                                )}
+                            </View>
+                        )}
+                    </ScrollView>
+                )}
+            </View>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#3d0c45',
+    },
+    statusBar: {
+        height: STATUSBAR_HEIGHT,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#3d0c45',
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        paddingTop: STATUSBAR_HEIGHT + 8,
+    },
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    backButton: {
+        padding: 8,
+    },
     container: {
         flex: 1,
         backgroundColor: '#f8f9fa',
     },
-    tabContainer: {
+    tabs: {
         flexDirection: 'row',
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#ddd',
     },
-    tabButton: {
+    tab: {
         flex: 1,
         paddingVertical: height * 0.02,
         alignItems: 'center',
@@ -780,7 +722,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: 2,
         borderBottomColor: '#3d0c45',
     },
-    tabButtonText: {
+    tabText: {
         color: '#666',
         fontWeight: '600',
         fontSize: width * 0.04,
@@ -789,52 +731,78 @@ const styles = StyleSheet.create({
         color: '#3d0c45',
         fontWeight: 'bold',
     },
-    tabContent: {
+    matchesContainer: {
         flex: 1,
     },
-    contentContainer: {
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        color: '#666',
+        fontSize: width * 0.04,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: width * 0.05,
+    },
+    emptyText: {
+        color: '#666',
+        fontSize: width * 0.04,
+        textAlign: 'center',
+        lineHeight: width * 0.06,
+    },
+    emptySubtext: {
+        color: '#666',
+        fontSize: width * 0.035,
+        textAlign: 'center',
+        marginTop: 5,
+        marginBottom: 10,
+    },
+    refreshButton: {
+        backgroundColor: '#3d0c45',
+        paddingVertical: 10,
+        paddingHorizontal: 15,
+        borderRadius: 5,
+        minWidth: width * 0.4,
+        alignItems: 'center',
+    },
+    refreshButtonText: {
+        color: 'white',
+        fontWeight: '600',
+        fontSize: width * 0.035,
+    },
+    checkContainer: {
+        flex: 1,
+    },
+    checkContent: {
         padding: width * 0.05,
         paddingBottom: height * 0.05,
     },
-    title: {
+    checkTitle: {
         fontSize: width * 0.06,
         fontWeight: 'bold',
         color: '#3d0c45',
         marginVertical: height * 0.02,
         textAlign: 'center',
     },
-    subtitle: {
+    checkSubtitle: {
         fontSize: width * 0.035,
         color: '#666',
         textAlign: 'center',
         marginBottom: height * 0.02,
-    },
-    instruction: {
-        fontSize: width * 0.035,
-        color: '#666',
-        textAlign: 'center',
-        marginTop: 5,
-        marginBottom: 10,
-        paddingHorizontal: 15,
     },
     inputContainer: {
         marginBottom: height * 0.02,
     },
-    inputHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: height * 0.01,
-    },
-    label: {
+    inputLabel: {
         fontSize: width * 0.04,
         fontWeight: '600',
         color: '#3d0c45',
-    },
-    browseText: {
-        fontSize: width * 0.03,
-        color: '#3d0c45',
-        textDecorationLine: 'underline',
     },
     input: {
         backgroundColor: '#fff',
@@ -846,23 +814,14 @@ const styles = StyleSheet.create({
         minHeight: height * 0.12,
         color: '#333',
     },
-    selectedItemText: {
-        fontSize: width * 0.03,
-        color: '#3d0c45',
-        fontStyle: 'italic',
-        marginTop: 5,
-    },
-    matchButton: {
+    checkButton: {
         backgroundColor: '#3d0c45',
         borderRadius: width * 0.02,
         padding: height * 0.02,
         alignItems: 'center',
         marginTop: height * 0.01,
     },
-    disabledButton: {
-        opacity: 0.7,
-    },
-    matchButtonText: {
+    checkButtonText: {
         color: '#fff',
         fontWeight: 'bold',
         fontSize: width * 0.045,
@@ -876,236 +835,59 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#ddd',
     },
-    resultLabel: {
+    resultTitle: {
         fontSize: width * 0.04,
         fontWeight: '600',
         color: '#333',
         marginBottom: 5,
     },
-    resultScore: {
+    resultBarContainer: {
+        backgroundColor: '#f0f0f0',
+        borderRadius: width * 0.02,
+        padding: 2,
+        marginBottom: 10,
+    },
+    resultBar: {
+        height: 20,
+        backgroundColor: '#3d0c45',
+        borderRadius: width * 0.01,
+    },
+    resultPercent: {
         fontSize: width * 0.08,
         fontWeight: 'bold',
         marginBottom: height * 0.01,
     },
-    resultExplanation: {
+    resultConfidence: {
         fontSize: width * 0.035,
         color: '#666',
         textAlign: 'center',
         marginBottom: height * 0.02,
     },
-    recordMatchButton: {
-        backgroundColor: '#28a745',
-        borderRadius: width * 0.02,
-        paddingVertical: height * 0.015,
-        paddingHorizontal: width * 0.05,
-        marginTop: height * 0.01,
-    },
-    recordMatchButtonText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: width * 0.04,
-    },
-    errorContainer: {
-        backgroundColor: '#f8d7da',
-        borderColor: '#f5c6cb',
-        borderWidth: 1,
-        borderRadius: width * 0.02,
-        padding: width * 0.03,
-        marginTop: height * 0.02,
-    },
-    errorText: {
-        color: '#721c24',
-        fontSize: width * 0.035,
-        textAlign: 'center',
-    },
-    processedTextContainer: {
+    processedContainer: {
         width: '100%',
         backgroundColor: '#f8f9fa',
         borderRadius: width * 0.02,
         padding: width * 0.03,
         marginTop: height * 0.02,
     },
-    processedTextTitle: {
+    processedTitle: {
         fontSize: width * 0.035,
         fontWeight: 'bold',
         color: '#3d0c45',
         marginBottom: 5,
     },
-    processedTextItem: {
-        marginTop: 5,
-    },
-    processedTextLabel: {
-        fontSize: width * 0.03,
-        fontWeight: 'bold',
-        color: '#666',
-    },
-    processedTextValue: {
+    processedText: {
         fontSize: width * 0.035,
         color: '#333',
         marginTop: 2,
     },
-    // New styles for matches list
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 10,
-        color: '#666',
-        fontSize: width * 0.04,
-    },
-    noMatchesContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: width * 0.05,
-    },
-    noMatchesText: {
-        color: '#666',
-        fontSize: width * 0.04,
-        textAlign: 'center',
-        lineHeight: width * 0.06,
-    },
     matchesList: {
         padding: width * 0.03,
     },
-    matchCard: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 15,
-        marginBottom: 15,
-        borderWidth: 1,
-        borderColor: '#eaeaea',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-        elevation: 3,
-        flexDirection: 'row',
-    },
-    matchContent: {
-        flex: 1,
-        paddingRight: 10,
-    },
-    matchItemName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#3d0c45',
-        marginBottom: 8,
-    },
-    categoryContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 6,
-    },
-    matchItemCategory: {
-        fontSize: 14,
-        color: '#555',
-        fontWeight: '500',
-    },
-    descriptionContainer: {
-        marginVertical: 5,
-        backgroundColor: '#f9f5fd',
-        padding: 8,
-        borderRadius: 8,
-        borderLeftWidth: 3,
-        borderLeftColor: '#3d0c45',
-    },
-    descriptionLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#3d0c45',
-        marginBottom: 3,
-    },
-    matchItemDescription: {
-        fontSize: 13,
-        color: '#444',
-        lineHeight: 18,
-    },
-    matchItemTime: {
-        fontSize: 12,
-        color: '#888',
-        marginTop: 5,
-        fontStyle: 'italic',
-    },
-    scoreContainer: {
-        marginTop: 5,
-    },
-    matchScore: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#333',
-    },
-    contactButton: {
-        backgroundColor: '#3d0c45',
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        height: 60,
-        width: 70
-    },
-    contactButtonText: {
-        color: '#fff',
-        fontSize: 11,
-        fontWeight: '600',
-        marginTop: 4
-    },
-    actionsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        paddingHorizontal: width * 0.05,
-        marginBottom: 10,
-    },
-    reportButton: {
-        backgroundColor: '#3d0c45',
-        paddingVertical: 10,
-        paddingHorizontal: 15,
-        borderRadius: 5,
-        minWidth: width * 0.4,
-        alignItems: 'center',
-    },
-    reportButtonText: {
-        color: 'white',
-        fontWeight: '600',
-        fontSize: width * 0.035,
-    },
-    footerLoading: {
+    footerLoader: {
         padding: 10,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'row'
-    },
-    footerText: {
-        color: '#3d0c45',
-        marginLeft: 8,
-        fontSize: 14,
-    },
-    skeletonContainer: {
-        flex: 1,
-        padding: width * 0.03
-    },
-    skeletonLine: {
-        height: 14,
-        backgroundColor: '#f0f0f0',
-        borderRadius: 7,
-        marginBottom: 8,
-        width: '100%'
-    },
-    skeletonDescription: {
-        height: 40,
-        backgroundColor: '#f0f0f0',
-        borderRadius: 5,
-        marginVertical: 10
-    },
-    skeletonButton: {
-        height: 60,
-        width: 70,
-        backgroundColor: '#f0f0f0',
-        borderRadius: 8,
-        alignSelf: 'center'
     }
 });

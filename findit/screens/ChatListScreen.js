@@ -11,7 +11,8 @@ import {
     SafeAreaView,
     ActivityIndicator,
     Alert,
-    RefreshControl
+    RefreshControl,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +27,32 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
 const normalize = (size) => Math.round(size * scale);
 
+// Get the status bar height for proper padding
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+
+// Fallback data for when API fails
+const FALLBACK_CHAT_DATA = [
+    {
+        id: '1',
+        name: 'Support Team',
+        lastMessage: 'How can we assist you today?',
+        time: '10:30 AM',
+        unread: true,
+    }
+];
+
+// Function to get initials from a name
+const getInitials = (name) => {
+    if (!name) return '??';
+    
+    const parts = name.split(' ');
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    
+    return (
+        parts[0].charAt(0).toUpperCase() + 
+        parts[parts.length - 1].charAt(0).toUpperCase()
+    );
+};
 
 const ChatListScreen = ({ navigation }) => {
     const [chats, setChats] = useState([]);
@@ -153,7 +180,11 @@ const ChatListScreen = ({ navigation }) => {
         
         return (
             <TouchableOpacity 
-                style={styles.chatItem}
+                style={[
+                    styles.chatItem,
+                    item.unread && styles.unreadChatItem
+                ]}
+                activeOpacity={0.7}
                 onPress={() => {
                     console.log('Navigating to chat with user:', item.id);
                     navigation.navigate('ChatScreen', { 
@@ -173,9 +204,9 @@ const ChatListScreen = ({ navigation }) => {
                         onError={(e) => console.log('Error loading avatar:', e.nativeEvent.error)}
                     />
                 ) : (
-                    <View style={styles.placeholderAvatar}>
+                    <View style={[styles.placeholderAvatar, item.unread && styles.unreadAvatar]}>
                         <Text style={styles.avatarText}>
-                            {item.name.charAt(0).toUpperCase()}
+                            {getInitials(item.name)}
                         </Text>
                     </View>
                 )}
@@ -183,7 +214,7 @@ const ChatListScreen = ({ navigation }) => {
                 {/* Chat Details */}
                 <View style={styles.chatDetails}>
                     <View style={styles.chatHeader}>
-                        <Text style={styles.chatName} numberOfLines={1}>
+                        <Text style={[styles.chatName, item.unread && styles.unreadChatName]} numberOfLines={1}>
                             {item.name}
                         </Text>
                         <Text style={styles.chatTime}>
@@ -195,11 +226,16 @@ const ChatListScreen = ({ navigation }) => {
                             styles.lastMessage, 
                             item.unread && styles.unreadMessage
                         ]}
-                        numberOfLines={1}
+                        numberOfLines={2}
                     >
                         {item.lastMessage}
                     </Text>
                 </View>
+                
+                {/* Unread indicator */}
+                {item.unread && (
+                    <View style={styles.unreadIndicator} />
+                )}
             </TouchableOpacity>
         );
     };
@@ -209,14 +245,17 @@ const ChatListScreen = ({ navigation }) => {
             <Ionicons name="chatbubble-ellipses-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>No conversations yet</Text>
             <Text style={styles.emptySubText}>
-                Your conversations will appear here
+                Start a chat by finding something to match
             </Text>
         </View>
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
+        <View style={styles.container}>
+            <StatusBar backgroundColor="#3d0c45" barStyle="light-content" translucent={true} />
+            
+            {/* Safe area for status bar */}
+            <SafeAreaView style={styles.safeTopArea} />
             
             {/* Header */}
             <View style={styles.header}>
@@ -225,84 +264,99 @@ const ChatListScreen = ({ navigation }) => {
                     <TouchableOpacity 
                         style={styles.headerButton}
                         onPress={onRefresh}
+                        hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
                     >
-                        <Ionicons name="refresh" size={normalize(24)} color="#3b0b40" />
+                        <Ionicons name="refresh" size={24} color="#fff" />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* Error message */}
-            {error && (
-                <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{error}</Text>
-                </View>
-            )}
+            {/* Content area */}
+            <SafeAreaView style={styles.safeContentArea}>
+                {/* Error message */}
+                {error && (
+                    <View style={styles.errorContainer}>
+                        <Ionicons name="alert-circle" size={24} color="#cc0000" />
+                        <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                )}
 
-            {/* Loading indicator */}
-            {loading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#3b0b40" />
-                </View>
-            ) : (
-                /* Chat List */
-                <FlatList
-                    data={chats}
-                    renderItem={renderChatItem}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={[
-                        styles.chatList,
-                        chats.length === 0 && styles.emptyList
-                    ]}
-                    ListEmptyComponent={renderEmptyComponent}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            colors={['#3b0b40']}
-                            tintColor="#3b0b40"
-                        />
-                    }
-                />
-            )}
-        </SafeAreaView>
+                {/* Loading indicator */}
+                {loading ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#3d0c45" />
+                        <Text style={styles.loadingText}>Loading conversations...</Text>
+                    </View>
+                ) : (
+                    /* Chat List */
+                    <FlatList
+                        data={chats}
+                        renderItem={renderChatItem}
+                        keyExtractor={(item) => item.id}
+                        contentContainerStyle={[
+                            styles.chatList,
+                            chats.length === 0 && styles.emptyList
+                        ]}
+                        ListEmptyComponent={renderEmptyComponent}
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={['#3d0c45']}
+                                tintColor="#3d0c45"
+                            />
+                        }
+                    />
+                )}
+            </SafeAreaView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#3d0c45',
+    },
+    safeTopArea: {
+        flex: 0,
+        backgroundColor: '#3d0c45',
+    },
+    safeContentArea: {
+        flex: 1,
+        backgroundColor: '#f5f5f5',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: normalize(16),
-        paddingVertical: normalize(12),
+        paddingHorizontal: 16,
+        paddingTop: STATUSBAR_HEIGHT + 16,
+        paddingBottom: 16,
+        backgroundColor: '#3d0c45',
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        backgroundColor: '#fff',
-        elevation: 2,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+        elevation: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
     headerTitle: {
-        fontSize: normalize(20),
+        fontSize: 22,
         fontWeight: 'bold',
-        color: '#3b0b40',
+        color: '#ffffff',
     },
     headerButtons: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     headerButton: {
-        marginLeft: normalize(16),
-        padding: normalize(4),
+        padding: 5,
     },
     chatList: {
-        paddingBottom: normalize(16),
+        paddingTop: 8,
+        paddingBottom: 16,
     },
     emptyList: {
         flex: 1,
@@ -311,89 +365,123 @@ const styles = StyleSheet.create({
     chatItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: normalize(16),
-        paddingVertical: normalize(12),
+        paddingHorizontal: 16,
+        paddingVertical: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
+        borderBottomColor: '#eeeeee',
+        backgroundColor: '#ffffff',
     },
     avatar: {
-        width: normalize(50),
-        height: normalize(50),
-        borderRadius: normalize(25),
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        borderWidth: 2,
+        borderColor: '#f0f0f0',
     },
     placeholderAvatar: {
-        width: normalize(50),
-        height: normalize(50),
-        borderRadius: normalize(25),
-        backgroundColor: '#3b0b40',
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#6a1b9a',
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#f0f0f0',
     },
     avatarText: {
-        color: '#fff',
-        fontSize: normalize(18),
+        color: '#ffffff',
+        fontSize: 18,
         fontWeight: 'bold',
     },
     chatDetails: {
         flex: 1,
-        marginLeft: normalize(12),
+        marginLeft: 12,
     },
     chatHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: 4,
     },
     chatName: {
-        fontSize: normalize(16),
+        fontSize: 16,
         fontWeight: 'bold',
-        color: '#333',
+        color: '#333333',
         maxWidth: SCREEN_WIDTH * 0.5,
     },
     chatTime: {
-        fontSize: normalize(14),
-        color: '#888',
+        fontSize: 14,
+        color: '#888888',
     },
     lastMessage: {
-        fontSize: normalize(14),
-        color: '#666',
-        marginTop: normalize(4),
+        fontSize: 14,
+        color: '#666666',
     },
     unreadMessage: {
         fontWeight: 'bold',
-        color: '#000',
+        color: '#000000',
+    },
+    unreadIndicator: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#3d0c45',
+        marginLeft: 8,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        padding: 20,
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        color: '#666666',
     },
     errorContainer: {
-        padding: normalize(16),
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
         backgroundColor: '#ffeeee',
-        borderRadius: normalize(8),
-        margin: normalize(16),
+        borderRadius: 8,
+        margin: 16,
     },
     errorText: {
         color: '#cc0000',
-        textAlign: 'center',
-        fontSize: normalize(14),
+        marginLeft: 8,
+        fontSize: 14,
+        flex: 1,
     },
     emptyContainer: {
         alignItems: 'center',
         justifyContent: 'center',
-        padding: normalize(32),
+        padding: 32,
+        height: SCREEN_HEIGHT * 0.7,
     },
     emptyText: {
-        fontSize: normalize(18),
+        fontSize: 18,
         fontWeight: 'bold',
-        color: '#666',
-        marginTop: normalize(16),
+        color: '#666666',
+        marginTop: 16,
     },
     emptySubText: {
-        fontSize: normalize(14),
-        color: '#999',
-        marginTop: normalize(8),
+        fontSize: 14,
+        color: '#999999',
+        marginTop: 8,
         textAlign: 'center',
+    },
+    unreadChatItem: {
+        backgroundColor: 'rgba(61, 12, 69, 0.05)',
+        borderLeftWidth: 4,
+        borderLeftColor: '#3d0c45',
+    },
+    unreadChatName: {
+        color: '#3d0c45',
+    },
+    unreadAvatar: {
+        backgroundColor: '#3d0c45',
+        borderColor: '#3d0c45',
     },
 });
 

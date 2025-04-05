@@ -9,11 +9,13 @@ import {
   Platform,
   Dimensions,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API_CONFIG from '../config';
 
 // Get screen dimensions for responsive design
 const { width } = Dimensions.get('window');
@@ -28,48 +30,151 @@ const DashboardScreen = ({ navigation }) => {
     pendingItems: 0,
     totalMatches: 0
   });
-  
-  useEffect(() => {
-    // Simulate loading data from API
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // In a real app, you would fetch this data from your backend
-        // For now, we'll use demo data
-        
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Demo data
-        setStats({
-          lostItems: 12,
-          foundItems: 8,
-          returnedItems: 5,
-          pendingItems: 15,
-          totalMatches: 7
-        });
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setLoading(false);
-      }
-    };
-    
-    fetchData();
-  }, []);
-  
-  // Simulated data for charts
-  const monthlyData = {
-    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+  const [monthlyData, setMonthlyData] = useState({
+    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
     datasets: [
       {
-        data: [20, 45, 28, 80, 99, 43],
+        data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         color: (opacity = 1) => `rgba(61, 12, 69, ${opacity})`,
         strokeWidth: 2
       }
     ],
-    legend: ["Lost Items Reported"]
+    legend: ["Activity"]
+  });
+  
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+  
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching dashboard stats from API...');
+      
+      // Demo/fallback data if the API fails
+      const demoData = {
+        status: 'success',
+        stats: {
+          lostItems: 12,
+          foundItems: 8,
+          returnedItems: 5,
+          pendingItems: 15,
+          totalMatches: 7,
+          monthlyData: [
+            { month: 1, lost: 3, found: 2, matches: 1 },
+            { month: 2, lost: 5, found: 3, matches: 2 },
+            { month: 3, lost: 4, found: 2, matches: 1 },
+            { month: 4, lost: 6, found: 4, matches: 3 },
+            { month: 5, lost: 8, found: 5, matches: 4 },
+            { month: 6, lost: 7, found: 6, matches: 3 },
+            { month: 7, lost: 9, found: 7, matches: 5 },
+            { month: 8, lost: 11, found: 8, matches: 6 },
+            { month: 9, lost: 10, found: 7, matches: 5 },
+            { month: 10, lost: 8, found: 6, matches: 4 },
+            { month: 11, lost: 6, found: 4, matches: 3 },
+            { month: 12, lost: 4, found: 3, matches: 2 }
+          ]
+        }
+      };
+      
+      let data;
+      try {
+        // Make API call to fetch real statistics with a timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
+        
+        const response = await fetch(`${API_CONFIG.API_URL}/api/dashboard/stats`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          console.warn('API returned status:', response.status);
+          throw new Error(`API returned status ${response.status}`);
+        }
+        
+        data = await response.json();
+        console.log('Received dashboard stats:', data);
+      } catch (apiError) {
+        console.warn('API call failed, using demo data:', apiError.message);
+        // Use demo data if the API call fails
+        data = demoData;
+        // Log demo data being used
+        console.log('Using demo/fallback data for dashboard:', demoData.stats);
+      }
+      
+      if (data.status === 'success') {
+        setStats({
+          lostItems: data.stats.lostItems || 0,
+          foundItems: data.stats.foundItems || 0,
+          returnedItems: data.stats.returnedItems || 0,
+          pendingItems: data.stats.pendingItems || 0,
+          totalMatches: data.stats.totalMatches || 0
+        });
+        
+        // Process monthly data for the chart
+        if (data.stats.monthlyData && data.stats.monthlyData.length > 0) {
+          const lostItemsData = Array(12).fill(0);
+          const foundItemsData = Array(12).fill(0);
+          const matchesData = Array(12).fill(0);
+          
+          // Fill in the data from the API response
+          data.stats.monthlyData.forEach(monthData => {
+            const monthIndex = monthData.month - 1; // Convert to 0-based index
+            lostItemsData[monthIndex] = monthData.lost || 0;
+            foundItemsData[monthIndex] = monthData.found || 0;
+            matchesData[monthIndex] = monthData.matches || 0;
+          });
+          
+          // Calculate total activity (lost + found + matches) for each month
+          const totalActivityData = lostItemsData.map((value, index) => 
+            value + foundItemsData[index] + matchesData[index]
+          );
+          
+          setMonthlyData({
+            labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+            datasets: [
+              {
+                data: totalActivityData,
+                color: (opacity = 1) => `rgba(61, 12, 69, ${opacity})`,
+                strokeWidth: 2
+              }
+            ],
+            legend: ["Total Activity"]
+          });
+        }
+      } else {
+        console.error('Error in API response:', data.message);
+        // Only show error alert if not using demo data
+        if (data !== demoData) {
+          Alert.alert('Error', 'Failed to load dashboard data');
+        }
+        
+        // Set some fallback data
+        setStats({
+          lostItems: 0,
+          foundItems: 0,
+          returnedItems: 0,
+          pendingItems: 0,
+          totalMatches: 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      Alert.alert('Error', 'Failed to load dashboard data');
+      
+      // Set some fallback data
+      setStats({
+        lostItems: 0,
+        foundItems: 0,
+        returnedItems: 0,
+        pendingItems: 0,
+        totalMatches: 0
+      });
+    } finally {
+      setLoading(false);
+    }
   };
   
   const pieChartData = [
@@ -129,7 +234,7 @@ const DashboardScreen = ({ navigation }) => {
         } else if (title === 'Found Items') {
           navigation.navigate('ActivityListScreen', { filter: 'found' });
         } else if (title === 'Matches') {
-          navigation.navigate('MatchesScreen');
+          navigation.navigate('MatchingScreen');
         }
       }}
     >
@@ -152,7 +257,9 @@ const DashboardScreen = ({ navigation }) => {
           <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Dashboard</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={fetchDashboardData} style={styles.refreshButton}>
+          <Icon name="refresh" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
       
       {loading ? (
@@ -272,6 +379,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3d0c45',
     paddingVertical: 16,
     paddingHorizontal: 16,
+    paddingTop: STATUSBAR_HEIGHT + 16,
   },
   headerTitle: {
     fontSize: 20,
@@ -279,6 +387,9 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   backButton: {
+    padding: 8,
+  },
+  refreshButton: {
     padding: 8,
   },
   loadingContainer: {

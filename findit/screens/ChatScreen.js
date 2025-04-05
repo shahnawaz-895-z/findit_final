@@ -28,6 +28,9 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375; // 375 is standard width
 const normalize = (size) => Math.round(size * scale);
 
+// Get the status bar height for proper padding
+const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
+
 // Create a regular function instead of using hooks outside the component
 const createApiClient = (baseUrl) => {
     return axios.create({
@@ -70,6 +73,7 @@ const ChatScreen = ({ route, navigation }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [serverUrl, setServerUrl] = useState(API_CONFIG.API_URL);
+    const [isOnline, setIsOnline] = useState(false); // Track online status
     
     // Create a memoized API client that updates when serverUrl changes
     const apiClient = useMemo(() => createApiClient(serverUrl), [serverUrl]);
@@ -240,6 +244,32 @@ const ChatScreen = ({ route, navigation }) => {
         };
     }, [setupSocketConnection]);
 
+    // Show match details function
+    const showMatchDetails = useCallback(() => {
+        if (matchId) {
+            console.log('Navigating to match details with matchId:', matchId);
+            navigation.navigate('MatchDetailsScreen', { matchId });
+        } else if (matchData) {
+            console.log('Match data available but no matchId, creating temp match view');
+            Alert.alert(
+                'Match Information',
+                'This chat is related to a match between a lost and found item.',
+                [
+                    { text: 'Close', style: 'cancel' }
+                ]
+            );
+        } else {
+            console.log('No match information available');
+            Alert.alert(
+                'No Match Information',
+                'This is a direct chat without associated match information.',
+                [
+                    { text: 'OK' }
+                ]
+            );
+        }
+    }, [matchId, matchData, navigation]);
+
     // Send message - optimized with useCallback
     const onSend = useCallback((newMessages = []) => {
         if (!currentUserId || !socket) {
@@ -327,6 +357,13 @@ const ChatScreen = ({ route, navigation }) => {
         </Send>
     ), []);
     
+    // Scroll to bottom component for GiftedChat
+    const scrollToBottomComponent = useCallback(() => (
+        <View style={styles.scrollToBottomButton}>
+            <Ionicons name="chevron-down" size={normalize(24)} color="#666" />
+        </View>
+    ), []);
+    
     // Handle retry loading
     const handleRetry = useCallback(() => {
         setLoading(true);
@@ -356,203 +393,286 @@ const ChatScreen = ({ route, navigation }) => {
         </View>
     ), []);
 
+    // Custom StatusBar component to ensure visibility
+    const CustomStatusBar = ({backgroundColor, ...props}) => (
+        <View style={[styles.statusBar, { backgroundColor }]}>
+            <StatusBar translucent backgroundColor={backgroundColor} {...props} />
+        </View>
+    );
+
+    // Function to get the first letter of the name for avatar placeholder
+    const getInitials = (name) => {
+        if (!name) return '??';
+        
+        const parts = name.split(' ');
+        if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+        
+        return (
+            parts[0].charAt(0).toUpperCase() + 
+            parts[parts.length - 1].charAt(0).toUpperCase()
+        );
+    };
+
     // Render loading state if no messages loaded yet
     if (loading && messages.length === 0) {
         return renderLoadingSkeleton();
     }
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <StatusBar backgroundColor="#3b0b40" barStyle="light-content" />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={styles.container}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-            >
-                <View style={styles.header}>
-                    <TouchableOpacity
-                        style={styles.backButton}
+        <View style={styles.container}>
+            <StatusBar backgroundColor="#3d0c45" barStyle="light-content" translucent={true} />
+            
+            {/* Main SafeArea wrapper with status bar padding */}
+            <SafeAreaView style={styles.safeTopArea} />
+            
+            {/* Enhanced Chat Header - Outside SafeAreaView to allow custom padding */}
+            <View style={styles.header}>
+                <View style={styles.headerLeft}>
+                    <TouchableOpacity 
+                        style={styles.backButton} 
                         onPress={() => navigation.goBack()}
+                        hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
                     >
-                        <Ionicons name="arrow-back" size={normalize(24)} color="#3b0b40" />
+                        <Ionicons name="arrow-back" size={28} color="#fff" />
                     </TouchableOpacity>
-                    <View style={styles.headerUserInfo}>
+                    
+                    <View style={styles.userInfoContainer}>
                         {user.avatar ? (
-                            <Image
-                                source={{ uri: user.avatar }}
-                                style={styles.headerAvatar}
-                            />
+                            <Image source={{uri: user.avatar}} style={styles.avatar} />
                         ) : (
-                            <View style={styles.placeholderAvatar}>
-                                <Text style={styles.avatarText}>
-                                    {user.name.charAt(0).toUpperCase()}
-                                </Text>
+                            <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarText}>{getInitials(user.name)}</Text>
                             </View>
                         )}
-                        <Text style={styles.headerTitle} numberOfLines={1}>{user.name}</Text>
+                        
+                        <View style={styles.userTextInfo}>
+                            <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+                            <View style={styles.statusContainer}>
+                                <View style={[styles.statusDot, {backgroundColor: isOnline ? '#4caf50' : '#bdbdbd'}]} />
+                                <Text style={styles.statusText}>{isOnline ? 'Online' : 'Offline'}</Text>
+                            </View>
+                        </View>
                     </View>
                 </View>
-
-                {error ? (
-                    <View style={styles.errorContainer}>
-                        <Ionicons name="warning-outline" size={normalize(40)} color="#FF3B30" />
-                        <Text style={styles.errorText}>{error}</Text>
-                        <TouchableOpacity
-                            style={styles.retryButton}
-                            onPress={handleRetry}
+                
+                <View style={styles.headerRight}>
+                    {matchId && (
+                        <TouchableOpacity 
+                            style={styles.matchInfoButton}
+                            onPress={showMatchDetails}
+                            hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
                         >
-                            <Text style={styles.retryButtonText}>Retry</Text>
+                            <Ionicons name="information-circle" size={28} color="#fff" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+
+            {/* Content area with safe area bottom padding */}
+            <SafeAreaView style={styles.safeContentArea}>
+                {/* Loading State */}
+                {loading && (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#3d0c45" />
+                        <Text style={styles.loadingText}>Loading messages...</Text>
+                    </View>
+                )}
+                
+                {/* Error State */}
+                {error && !loading && (
+                    <View style={styles.errorContainer}>
+                        <Ionicons name="alert-circle" size={50} color="#f44336" />
+                        <Text style={styles.errorText}>{error}</Text>
+                        <TouchableOpacity 
+                            style={styles.retryButton}
+                            onPress={fetchMessages}
+                        >
+                            <Text style={styles.retryText}>Retry</Text>
                         </TouchableOpacity>
                     </View>
-                ) : (
-                    <GiftedChat
-                        messages={messages}
-                        onSend={onSend}
-                        user={{ _id: currentUserId }}
-                        renderBubble={renderBubble}
-                        renderInputToolbar={renderInputToolbar}
-                        renderSend={renderSend}
-                        renderComposer={renderComposer}
-                        alwaysShowSend
-                        scrollToBottom
-                        renderLoading={() => (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color="#5A67F2" />
-                            </View>
-                        )}
-                        listViewProps={{
-                            showsVerticalScrollIndicator: false,
-                            initialNumToRender: 10, // Reduced for better initial load
-                            maxToRenderPerBatch: 10, // Reduced for smoother scrolling
-                            windowSize: 10, // Reduced window size
-                            onEndReachedThreshold: 0.5,
-                            contentContainerStyle: { paddingBottom: 10 },
-                            removeClippedSubviews: Platform.OS === 'android', // Better performance on Android
-                            keyboardShouldPersistTaps: "handled", // Prevents keyboard dismissal issues
-                            keyboardDismissMode: "on-drag", // Improves keyboard interaction
-                            maintainVisibleContentPosition: { // Keeps visible content in view when keyboard appears
-                                minIndexForVisible: 0,
-                                autoscrollToTopThreshold: 100
-                            }
-                        }}
-                        messagesContainerStyle={styles.messagesContainer}
-                        minComposerHeight={normalize(40)}
-                        maxComposerHeight={normalize(100)}
-                        minInputToolbarHeight={normalize(60)}
-                        parsePatterns={(linkStyle) => [
-                            { type: 'url', style: linkStyle, onPress: (url) => Linking.openURL(url) },
-                            { type: 'phone', style: linkStyle, onPress: (phone) => Linking.openURL(`tel:${phone}`) },
-                            { type: 'email', style: linkStyle, onPress: (email) => Linking.openURL(`mailto:${email}`) }
-                        ]}
-                        infiniteScroll={false} // Disable auto-loading old messages
-                        renderAvatar={null} // Disable avatar rendering for better performance
-                        isLoadingEarlier={false} // Disable loading earlier messages indicator
-                    />
                 )}
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+                
+                {/* Chat Messages */}
+                {!loading && !error && (
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        style={styles.keyboardView}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                    >
+                        <GiftedChat
+                            messages={messages}
+                            onSend={messages => onSend(messages)}
+                            user={{
+                                _id: currentUserId,
+                            }}
+                            renderBubble={renderBubble}
+                            renderInputToolbar={renderInputToolbar}
+                            renderSend={renderSend}
+                            renderComposer={renderComposer}
+                            maxComposerHeight={100}
+                            minComposerHeight={40}
+                            minInputToolbarHeight={60}
+                            bottomOffset={Platform.OS === 'ios' ? 40 : 0}
+                            scrollToBottom
+                            scrollToBottomComponent={scrollToBottomComponent}
+                            alwaysShowSend
+                            inverted={true}
+                            renderAvatarOnTop
+                            listViewProps={{
+                                style: styles.listView,
+                                contentContainerStyle: styles.listContent,
+                            }}
+                        />
+                    </KeyboardAvoidingView>
+                )}
+            </SafeAreaView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: '#fff',
-    },
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#3d0c45',
+        paddingTop: STATUSBAR_HEIGHT,
+    },
+    safeTopArea: {
+        flex: 0,
+        backgroundColor: '#3d0c45',
+    },
+    safeContentArea: {
+        flex: 1,
+        backgroundColor: '#f5f5f5',
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: normalize(12),
+        justifyContent: 'space-between',
+        backgroundColor: '#3d0c45',
+        paddingHorizontal: 16,
+        paddingTop: STATUSBAR_HEIGHT + 16,
+        paddingBottom: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        backgroundColor: '#fff',
-        elevation: 2,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+        elevation: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
     },
-    backButton: {
-        padding: normalize(5),
-    },
-    headerUserInfo: {
-        flex: 1,
+    headerLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginLeft: normalize(10),
-    },
-    headerAvatar: {
-        width: normalize(40),
-        height: normalize(40),
-        borderRadius: normalize(20),
-        marginRight: normalize(10),
-    },
-    placeholderAvatar: {
-        width: normalize(40),
-        height: normalize(40),
-        borderRadius: normalize(20),
-        backgroundColor: '#3b0b40',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: normalize(10),
-    },
-    avatarText: {
-        color: '#fff',
-        fontSize: normalize(16),
-        fontWeight: 'bold',
-    },
-    headerTitle: {
-        fontSize: normalize(18),
-        fontWeight: 'bold',
-        color: '#3b0b40',
         flex: 1,
     },
-    sendButton: {
+    headerRight: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+    },
+    backButton: {
+        marginRight: 10,
+        padding: 5,
+    },
+    userInfoContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    avatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 10,
+        borderWidth: 2,
+        borderColor: '#ffffff',
+    },
+    avatarPlaceholder: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#6a1b9a',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: normalize(5),
-        marginRight: normalize(5),
-        width: normalize(36),
-        height: normalize(36),
+        marginRight: 10,
+        borderWidth: 2,
+        borderColor: '#ffffff',
+    },
+    avatarText: {
+        color: '#ffffff',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    userTextInfo: {
+        flex: 1,
+    },
+    userName: {
+        color: '#ffffff',
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginBottom: 2,
+    },
+    statusContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    statusDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginRight: 5,
+    },
+    statusText: {
+        color: '#ffffff',
+        fontSize: 12,
+        opacity: 0.8,
+    },
+    matchInfoButton: {
+        padding: 5,
+    },
+    keyboardView: {
+        flex: 1,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        padding: 20,
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        color: '#666',
     },
     errorContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: normalize(15),
-        backgroundColor: '#fff',
+        padding: 20,
     },
     errorText: {
-        color: '#cc0000',
+        marginTop: 10,
+        marginBottom: 20,
+        fontSize: 16,
+        color: '#666',
         textAlign: 'center',
-        fontSize: normalize(16),
-        marginVertical: normalize(15),
     },
     retryButton: {
-        padding: normalize(12),
-        backgroundColor: '#3b0b40',
-        borderRadius: normalize(8),
-        marginTop: normalize(10),
-        minWidth: normalize(120),
-        alignItems: 'center',
+        backgroundColor: '#3d0c45',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 5,
     },
-    retryButtonText: {
+    retryText: {
         color: '#fff',
-        fontSize: normalize(16),
+        fontSize: 16,
         fontWeight: 'bold',
     },
-    messagesContainer: {
-        flex: 1,
-        backgroundColor: '#fff',
+    listView: {
+        backgroundColor: '#f5f5f5',
+    },
+    listContent: {
+        paddingVertical: 10,
     },
     inputToolbar: {
         borderTopWidth: 1,
@@ -578,13 +698,14 @@ const styles = StyleSheet.create({
         marginBottom: 0,
         marginRight: 0,
     },
-    loadingText: {
-        color: '#3b0b40',
-        fontSize: normalize(16),
-        fontWeight: 'bold',
-        marginTop: normalize(10),
+    sendButton: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: normalize(5),
+        marginRight: normalize(5),
+        width: normalize(36),
+        height: normalize(36),
     },
-    // Skeleton loading styles
     skeletonHeader: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -614,7 +735,31 @@ const styles = StyleSheet.create({
         borderRadius: normalize(12),
         marginVertical: normalize(8),
         marginHorizontal: normalize(15),
-    }
+    },
+    messagesContainer: {
+        flex: 1,
+        backgroundColor: '#fff',
+    },
+    scrollToBottomButton: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: normalize(5),
+        backgroundColor: '#f0f0f0',
+        borderRadius: normalize(20),
+        width: normalize(40),
+        height: normalize(40),
+        position: 'absolute',
+        bottom: normalize(10),
+        right: normalize(10),
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.5,
+        elevation: 2,
+    },
+    statusBar: {
+        height: STATUSBAR_HEIGHT,
+    },
 });
 
 export default ChatScreen;

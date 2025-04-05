@@ -36,7 +36,36 @@ const notificationSchema = new mongoose.Schema({
     createdAt: {
         type: Date,
         default: Date.now
-    }
+    },
+    // Fields for match notifications
+    matchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Match',
+        required: false
+    },
+    // Lost item details
+    lostItemName: String,
+    lostItemDescription: String,
+    lostLocation: String,
+    lostDate: Date,
+    lostTime: String,
+    lostCategory: String,
+    // Found item details
+    foundItemName: String,
+    foundItemDescription: String,
+    foundLocation: String,
+    foundDate: Date,
+    foundTime: String,
+    foundCategory: String,
+    // Match details
+    matchDate: Date,
+    similarityScore: Number,
+    // General notification display fields
+    location: String,
+    date: Date,
+    time: String,
+    category: String,
+    itemName: String
 });
 
 // Create indexes for efficient querying
