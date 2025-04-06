@@ -18,6 +18,8 @@ const ItemDetailsScreen = ({ route, navigation }) => {
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [reposting, setReposting] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     fetchItemDetails();
@@ -48,6 +50,45 @@ const ItemDetailsScreen = ({ route, navigation }) => {
       setError('Failed to fetch item details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRepostItem = async () => {
+    try {
+      setReposting(true);
+      
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Authentication Error', 'You need to be logged in to repost an item.');
+        return;
+      }
+
+      const url = `${API_CONFIG.API_URL}/repost-lost-item/${itemId}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        Alert.alert(
+          'Success',
+          'Your item has been reposted. We will notify you if it matches with any found items.',
+          [{ text: 'OK', onPress: fetchItemDetails }]
+        );
+      } else {
+        Alert.alert('Error', data.message || 'Failed to repost item');
+      }
+    } catch (error) {
+      console.error('Error reposting item:', error);
+      Alert.alert('Error', 'An error occurred while reposting the item');
+    } finally {
+      setReposting(false);
     }
   };
 
@@ -120,18 +161,24 @@ const ItemDetailsScreen = ({ route, navigation }) => {
       </View>
 
       {/* Photo section */}
-      {item.photo && typeof item.photo === 'string' && item.photo.length > 0 ? (
+      {item.photo && typeof item.photo === 'string' && item.photo.length > 0 && !imageError ? (
         <View style={styles.imageContainer}>
           <Image 
             source={{ uri: `data:image/jpeg;base64,${item.photo}` }}
             style={styles.itemImage}
             resizeMode="cover"
+            onError={() => {
+              console.error('Error loading image');
+              setImageError(true);
+            }}
           />
         </View>
       ) : (
         <View style={[styles.imageContainer, styles.noImageContainer]}>
           <Icon name="image-off" size={50} color="#ccc" />
-          <Text style={styles.noImageText}>No image available</Text>
+          <Text style={styles.noImageText}>
+            {imageError ? 'Failed to load image' : 'No image available'}
+          </Text>
         </View>
       )}
 
@@ -191,6 +238,34 @@ const ItemDetailsScreen = ({ route, navigation }) => {
                 <Text style={styles.infoLabel}>Color:</Text>
                 <Text style={styles.infoText}>{item.color}</Text>
               </View>
+            )}
+          </View>
+        )}
+
+        {/* Repost button - only for lost items */}
+        {itemType === 'lost' && (
+          <View style={styles.repostContainer}>
+            <Text style={styles.repostTitle}>
+              Can't find your item? Repost to expand your search reach.
+            </Text>
+            <TouchableOpacity
+              style={styles.repostButton}
+              onPress={handleRepostItem}
+              disabled={reposting}
+            >
+              {reposting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Icon name="refresh" size={20} color="#fff" style={styles.repostIcon} />
+                  <Text style={styles.repostButtonText}>Repost This Item</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {item.repostedAt && (
+              <Text style={styles.repostedText}>
+                Last reposted: {formatDate(item.repostedAt)}
+              </Text>
             )}
           </View>
         )}
@@ -350,6 +425,43 @@ const styles = StyleSheet.create({
   noImageText: {
     fontSize: 16,
     color: '#ccc',
+  },
+  repostContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#f9f1fe',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e9d8f4',
+  },
+  repostTitle: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  repostButton: {
+    backgroundColor: '#3d0c45',
+    borderRadius: 8,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  repostButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  repostIcon: {
+    marginRight: 8,
+  },
+  repostedText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
 

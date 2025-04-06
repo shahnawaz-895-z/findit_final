@@ -130,23 +130,74 @@ export default function NotificationsScreen({ navigation }) {
             console.log('Fetching notifications for userId:', userId);
             if (!userId) {
                 console.log('No userId found, returning');
+                setLoading(false);
+                setRefreshing(false);
                 return;
             }
 
             const url = `${API_CONFIG.API_URL}/api/notifications/${userId}?page=${pageNum}&limit=20`;
             console.log('Fetching notifications from:', url);
             
+            setLoading(true);
+            console.log(`Making request to: ${url}`);
+            
             const response = await fetch(url);
-            const data = await response.json();
+            
             console.log('Notifications response status:', response.status);
             
             if (!response.ok) {
+                const errorData = await response.text();
+                console.error('Error response from server:', errorData);
+                setLoading(false);
+                setRefreshing(false);
+                Alert.alert('Error', 'Failed to fetch notifications');
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (!data.success) {
                 console.error('Failed to fetch notifications:', data);
                 throw new Error(data.error || 'Failed to fetch notifications');
             }
 
             const notificationsList = data.notifications || [];
-            console.log('Received notifications count:', notificationsList.length);
+            console.log(`Received ${notificationsList.length} notifications for user ${userId}`);
+            
+            if (notificationsList.length === 0) {
+                console.log('No notifications received from server');
+                setLoading(false);
+                setRefreshing(false);
+                
+                // If refreshing, clear notifications
+                if (shouldRefresh) {
+                    setNotifications([]);
+                }
+                return;
+            }
+            
+            // Log all notification types we received
+            const notificationTypes = {};
+            notificationsList.forEach(notification => {
+                notificationTypes[notification.type] = (notificationTypes[notification.type] || 0) + 1;
+            });
+            console.log('Notification types received:', notificationTypes);
+            
+            // Log the most recent notification
+            if (notificationsList.length > 0) {
+                const mostRecent = notificationsList[0];
+                console.log('Most recent notification:', JSON.stringify({
+                    id: mostRecent._id,
+                    type: mostRecent.type,
+                    title: mostRecent.title,
+                    message: mostRecent.message,
+                    createdAt: mostRecent.createdAt,
+                    read: mostRecent.read,
+                    matchId: mostRecent.matchId,
+                    lostItemId: mostRecent.lostItemId,
+                    foundItemId: mostRecent.foundItemId
+                }, null, 2));
+            }
             
             // Process match notifications to ensure descriptions are available
             const processedNotifications = notificationsList.map(notification => {
@@ -190,6 +241,18 @@ export default function NotificationsScreen({ navigation }) {
                     }, null, 2));
                     
                     return processedNotification;
+                } else if (notification.type === 'lost_item_repost') {
+                    console.log(`Processing lost_item_repost notification ${notification._id}`);
+                    
+                    // Make a deep copy to avoid reference issues
+                    const processedNotification = {...notification};
+                    
+                    // Ensure required fields exist
+                    if (!processedNotification.itemName) {
+                        processedNotification.itemName = "Lost Item";
+                    }
+                    
+                    return processedNotification;
                 }
                 return notification;
             });
@@ -206,17 +269,41 @@ export default function NotificationsScreen({ navigation }) {
                 }, null, 2));
             }
             
-            setNotifications(prev => 
-                shouldRefresh ? processedNotifications : [...prev, ...processedNotifications]
-            );
+            // Check for repost notifications
+            const repostNotifications = processedNotifications.filter(n => n.type === 'lost_item_repost');
+            console.log('Repost notifications found:', repostNotifications.length);
+            if (repostNotifications.length > 0) {
+                console.log('First repost notification:', JSON.stringify({
+                    id: repostNotifications[0]._id,
+                    lostItemId: repostNotifications[0].lostItemId,
+                    itemName: repostNotifications[0].itemName,
+                    createdAt: repostNotifications[0].createdAt
+                }, null, 2));
+            }
+            
+            console.log('Setting notifications with processed data');
+            console.log('Should refresh:', shouldRefresh);
+            
+            setNotifications(prev => {
+                const newNotifications = shouldRefresh 
+                    ? processedNotifications 
+                    : [...prev, ...processedNotifications];
+                
+                console.log(`Total notifications after update: ${newNotifications.length}`);
+                return newNotifications;
+            });
+            
             setHasMore(data.hasMore);
             setPage(pageNum);
+            console.log(`Updated page to ${pageNum}, hasMore: ${data.hasMore}`);
+            
             setLoading(false);
             setRefreshing(false);
         } catch (error) {
             console.error('Error fetching notifications:', error);
             setLoading(false);
             setRefreshing(false);
+            Alert.alert('Error', 'Failed to load notifications');
         }
     };
 
@@ -234,13 +321,48 @@ export default function NotificationsScreen({ navigation }) {
             console.log('Polling notifications from:', url);
             
             const response = await fetch(url);
-            const data = await response.json();
             console.log('Polling response status:', response.status);
 
-            if (!response.ok) throw new Error(data.error || 'Failed to fetch notifications');
+            if (!response.ok) {
+                const errorData = await response.text();
+                console.error('Error response from polling:', errorData);
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                console.error('Failed to poll notifications:', data);
+                throw new Error(data.error || 'Failed to fetch notifications');
+            }
 
             const newNotifications = data.notifications || [];
-            console.log('Received new notifications:', newNotifications.length);
+            console.log(`Polling received ${newNotifications.length} new notifications`);
+            
+            if (newNotifications.length === 0) {
+                console.log('No new notifications in polling response');
+                return;
+            }
+            
+            // Log all notification types we received in polling
+            const notificationTypes = {};
+            newNotifications.forEach(notification => {
+                notificationTypes[notification.type] = (notificationTypes[notification.type] || 0) + 1;
+            });
+            console.log('Notification types in polling:', notificationTypes);
+            
+            // Log the most recent polled notification
+            if (newNotifications.length > 0) {
+                const mostRecent = newNotifications[0];
+                console.log('Most recent polled notification:', JSON.stringify({
+                    id: mostRecent._id,
+                    type: mostRecent.type,
+                    title: mostRecent.title,
+                    message: mostRecent.message,
+                    createdAt: mostRecent.createdAt,
+                    read: mostRecent.read
+                }, null, 2));
+            }
             
             // Process any match notifications to ensure descriptions are available
             const processedNewNotifications = newNotifications.map(notification => {
@@ -272,15 +394,27 @@ export default function NotificationsScreen({ navigation }) {
                     }
                     
                     return processedNotification;
+                } else if (notification.type === 'lost_item_repost') {
+                    console.log(`Processing new lost_item_repost notification ${notification._id}`);
+                    
+                    // Make a deep copy to avoid reference issues
+                    const processedNotification = {...notification};
+                    
+                    // Ensure required fields exist
+                    if (!processedNotification.itemName) {
+                        processedNotification.itemName = "Lost Item";
+                    }
+                    
+                    return processedNotification;
                 }
                 return notification;
             });
             
             // Log match notifications
             const newMatchNotifications = processedNewNotifications.filter(n => n.type === 'match_found');
+            console.log(`Received ${newMatchNotifications.length} new match notifications from polling`);
             if (newMatchNotifications.length > 0) {
-                console.log(`Received ${newMatchNotifications.length} new match notifications`);
-                console.log('First new match notification:', JSON.stringify({
+                console.log('First new match notification from polling:', JSON.stringify({
                     id: newMatchNotifications[0]._id,
                     matchId: newMatchNotifications[0].matchId,
                     lostItemDesc: newMatchNotifications[0].lostItemDescription ? 'Present' : 'Missing',
@@ -288,19 +422,48 @@ export default function NotificationsScreen({ navigation }) {
                 }, null, 2));
             }
             
+            // Log repost notifications
+            const newRepostNotifications = processedNewNotifications.filter(n => n.type === 'lost_item_repost');
+            console.log(`Received ${newRepostNotifications.length} new repost notifications from polling`);
+            if (newRepostNotifications.length > 0) {
+                console.log('First new repost notification from polling:', JSON.stringify({
+                    id: newRepostNotifications[0]._id,
+                    lostItemId: newRepostNotifications[0].lostItemId,
+                    itemName: newRepostNotifications[0].itemName
+                }, null, 2));
+            }
+            
             if (processedNewNotifications.length > 0) {
+                console.log(`Adding ${processedNewNotifications.length} new notifications to state`);
+                
                 setNotifications(prev => {
-                    const allNotifications = [...processedNewNotifications, ...prev];
-                    // Remove duplicates based on _id
-                    const uniqueNotifications = Array.from(
-                        new Map(allNotifications.map(item => [item._id, item])).values()
+                    // Get existing IDs to avoid duplicates
+                    const existingIds = new Set(prev.map(item => item._id));
+                    
+                    // Filter out any notifications that already exist in our state
+                    const uniqueNewNotifications = processedNewNotifications.filter(
+                        item => !existingIds.has(item._id)
                     );
-                    console.log('Updated notifications count:', uniqueNotifications.length);
-                    return uniqueNotifications;
+                    
+                    console.log(`After filtering, adding ${uniqueNewNotifications.length} truly new notifications`);
+                    
+                    if (uniqueNewNotifications.length === 0) {
+                        console.log('No unique new notifications to add');
+                        return prev;
+                    }
+                    
+                    // Add new notifications to the beginning of the array
+                    const updatedNotifications = [...uniqueNewNotifications, ...prev];
+                    console.log(`Total notifications after polling update: ${updatedNotifications.length}`);
+                    return updatedNotifications;
                 });
+                
+                // Show a toast or alert for new notifications if you want
+                console.log('New notifications arrived');
             }
 
             setLastPolled(data.timestamp || Date.now());
+            console.log(`Updated lastPolled timestamp to: ${new Date(data.timestamp || Date.now()).toISOString()}`);
         } catch (error) {
             console.error('Error polling notifications:', error);
         }
@@ -379,6 +542,25 @@ export default function NotificationsScreen({ navigation }) {
             fetchAllLostItems();
         }
     }, [isFocused]);
+
+    // Add AppState listener to refresh when app comes to foreground
+    useEffect(() => {
+        const handleAppStateChange = (nextAppState) => {
+            console.log('App state changed to:', nextAppState);
+            if (nextAppState === 'active' && isFocused) {
+                console.log('App became active while on notifications screen, refreshing data');
+                onRefresh();
+            }
+        };
+
+        // Subscribe to AppState changes
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+        return () => {
+            // Clean up the subscription
+            subscription.remove();
+        };
+    }, [isFocused, onRefresh]);
 
     // Handle refresh
     const onRefresh = useCallback(() => {
@@ -500,6 +682,16 @@ export default function NotificationsScreen({ navigation }) {
         // Format additional details for item notifications
         const renderAdditionalDetails = (notification) => {
             if (notification.type === 'lost_item_report' || notification.type === 'lost_item_repost') {
+                console.log(`Rendering details for ${notification.type} notification:`, JSON.stringify({
+                    id: notification._id,
+                    type: notification.type,
+                    lostItemId: notification.lostItemId,
+                    itemName: notification.itemName,
+                    location: notification.location,
+                    date: notification.date,
+                    category: notification.category
+                }, null, 2));
+                
                 return (
                     <View style={styles.notificationDetails}>
                         {notification.location && (

@@ -246,41 +246,70 @@ const ReportFoundItem = () => {
         }
       }
       
-      // Process image for description
-      const base64ImageData = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      try {
+        // Process image for description
+        const base64ImageData = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
 
-      const result = await axios.post(huggingFaceUrl, { inputs: base64ImageData }, {
-        headers: {
-          'Authorization': `Bearer ${HUGGING_FACE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      });
+        const result = await axios.post(huggingFaceUrl, { inputs: base64ImageData }, {
+          headers: {
+            'Authorization': `Bearer ${HUGGING_FACE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000, // 10 second timeout
+        });
 
-      let generatedDescription = 'No description available';
-      if (result.data && result.data[0] && result.data[0].generated_text) {
-        generatedDescription = result.data[0].generated_text;
-        setDescription(generatedDescription);
-        
-        // Auto-detect category if not already set
-        if (!category) {
-          const detectedCategory = detectCategoryFromDescription(generatedDescription);
-          setCategory(detectedCategory);
+        if (result.data && result.data[0] && result.data[0].generated_text) {
+          setDescription(result.data[0].generated_text);
+          
+          // Auto-detect category if not already set
+          if (!category) {
+            const detectedCategory = detectCategoryFromDescription(result.data[0].generated_text);
+            setCategory(detectedCategory);
+          }
+          
+          // Auto-generate item name if not already set
+          if (!itemName) {
+            const generatedName = generateItemNameFromDescription(result.data[0].generated_text);
+            setItemName(generatedName);
+          }
+        } else {
+          console.log('No generated text received from API.');
+          setDescription('Found item - please describe what you found');
         }
+      } catch (apiError) {
+        console.error('Error processing image:', apiError);
         
-        // Auto-generate item name if not already set
-        if (!itemName) {
-          const generatedName = generateItemNameFromDescription(generatedDescription);
-          setItemName(generatedName);
+        // Check if it's a 503 Service Unavailable error (common with Hugging Face)
+        if (apiError.response && apiError.response.status === 503) {
+          console.log('Hugging Face API is temporarily unavailable. Using fallback description.');
+          setDescription('Found item - please describe what you found');
+          
+          // Set a default category if needed
+          if (!category) {
+            setCategory('Others');
+          }
+          
+          // Set a default item name
+          if (!itemName) {
+            setItemName('Found Item');
+          }
+          
+          // Don't show an error alert for this expected issue
+          Alert.alert(
+            'Image Recognition Unavailable',
+            'The image recognition service is temporarily unavailable. Please provide a description manually.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          // For other errors, show the alert
+          Alert.alert('Error', 'Failed to process the image. Please provide details manually.');
         }
-      } else {
-        setDescription(generatedDescription);
       }
-
     } catch (error) {
-      console.error('Error processing image:', error);
-      Alert.alert('Error', 'Failed to process the image. Please try again.');
+      console.error('Error in image processing workflow:', error);
+      setDescription('Found item - please describe what you found');
     } finally {
       setIsImageProcessing(false);
     }
@@ -355,190 +384,244 @@ const ReportFoundItem = () => {
     }
   };
 
-  const handleSubmit = async () => {
+  // Verify authentication token before submission
+  const verifyAuthentication = async () => {
     try {
-        // Validate required fields
-        if (!contact) {
-            Alert.alert('Error', 'Please enter your contact information');
-            return;
-        }
-        if (!location) {
-            Alert.alert('Error', 'Please enter the location where you found the item');
-            return;
-        }
-        if (!category) {
-            Alert.alert('Error', 'Please select a category');
-            return;
-        }
-        if (!description) {
-            Alert.alert('Error', 'Please provide a description');
-            return;
-        }
-        if (!itemName) {
-            Alert.alert('Error', 'Please enter the item name');
-            return;
-        }
-
-        // Get user ID and auth token
-        const userData = await AsyncStorage.getItem('userData');
-        const authToken = await AsyncStorage.getItem('authToken');
-        
-        if (!authToken) {
-            Alert.alert('Error', 'Please log in to report a found item');
-            navigation.navigate('Login');
-            return;
-        }
-
-        // Modified: Handle userData parsing more safely
-        let userId = null;
-        if (userData) {
-            try {
-                const parsedUserData = JSON.parse(userData);
-                userId = parsedUserData._id || parsedUserData.id || parsedUserData.userId;
-                console.log('User ID:', userId);
-                
-                if (!userId) {
-                    console.log('User data structure:', JSON.stringify(parsedUserData));
-                }
-            } catch (parseError) {
-                console.error('Error parsing user data:', parseError);
-            }
-        }
-
-        // Create FormData object
-        const formData = new FormData();
-        
-        // Add userId only if it's a valid string
-        if (userId && typeof userId === 'string' && userId.trim() !== '') {
-            formData.append('userId', userId);
-        }
-        
-        formData.append('contact', contact);
-        formData.append('location', location);
-        formData.append('category', category);
-        formData.append('description', description);
-        formData.append('itemName', itemName);
-        formData.append('time', new Date().toLocaleTimeString());
-        formData.append('date', new Date().toISOString().split('T')[0]);
-
-        // Add coordinates if available
-        if (selectedLocation) {
-            formData.append('latitude', selectedLocation.latitude.toString());
-            formData.append('longitude', selectedLocation.longitude.toString());
-        }
-
-        // Add category-specific attributes
-        if (category === 'Electronics') {
-            if (brand) formData.append('brand', brand);
-            if (model) formData.append('model', model);
-            if (color) formData.append('color', color);
-            if (serialNumber) formData.append('serialNumber', serialNumber);
-        } else if (category === 'Accessories') {
-            if (brand) formData.append('brand', brand);
-            if (material) formData.append('material', material);
-            if (color) formData.append('color', color);
-        } else if (category === 'Clothing') {
-            if (brand) formData.append('brand', brand);
-            if (size) formData.append('size', size);
-            if (color) formData.append('color', color);
-            if (material) formData.append('material', material);
-        } else if (category === 'Documents') {
-            if (documentType) formData.append('documentType', documentType);
-            if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
-            if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
-        } else {
-            // Others category - add any general attributes
-            if (color) formData.append('color', color);
-            if (brand) formData.append('brand', brand);
-        }
-
-        // Handle photo upload
-        if (photo) {
-            // The photo object is already a URI string from the image picker
-            const photoUri = Platform.OS === 'android' ? photo : photo.replace('file://', '');
-            const photoName = photoUri.split('/').pop();
-            const photoType = 'image/jpeg';
-
-            // Check if photo needs compression
-            const fileInfo = await FileSystem.getInfoAsync(photoUri);
-            if (fileInfo.size > 5 * 1024 * 1024) {
-                const compressedPhoto = await ImageManipulator.manipulateAsync(
-                    photoUri,
-                    [{ resize: { width: 1024 } }],
-                    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-                );
-                formData.append('photo', {
-                    uri: compressedPhoto.uri,
-                    type: photoType,
-                    name: photoName
-                });
-            } else {
-                formData.append('photo', {
-                    uri: photoUri,
-                    type: photoType,
-                    name: photoName
-                });
-            }
-        }
-
-        // Send data to backend
-        try {
-            setIsLoading(true);
-            const response = await axios.post(`${API_CONFIG.API_URL}/reportfound`, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                    'Authorization': `Bearer ${authToken}`
-                },
-                timeout: 30000 // 30 second timeout
-            });
-
-            if (response.data && response.data.status === 'success') {
-                Alert.alert(
-                    'Success',
-                    'Found item reported successfully!',
-                    [
-                        {
-                            text: 'OK',
-                            onPress: () => navigation.goBack()
-                        }
-                    ]
-                );
-                
-                // Add to recent activity
-                await addToRecentActivity();
-            } else {
-                throw new Error('Server returned an unsuccessful status');
-            }
-        } catch (error) {
-            console.error('Error submitting found item report:', error);
-            let errorMessage = 'Failed to report found item. ';
-            
-            if (error.response) {
-                // The request was made and the server responded with a status code
-                // that falls out of the range of 2xx
-                errorMessage += `Server error: ${error.response.status}`;
-                console.log('Error response data:', error.response.data);
-            } else if (error.request) {
-                // The request was made but no response was received
-                errorMessage += 'No response received from server. Please check your internet connection.';
-            } else {
-                // Something happened in setting up the request that triggered an Error
-                errorMessage += error.message;
-            }
-            
-            Alert.alert(
-                'Error',
-                errorMessage
-            );
-        } finally {
-            setIsLoading(false);
-        }
-    } catch (error) {
-        console.error('Error in form submission process:', error);
+      const authToken = await AsyncStorage.getItem('authToken');
+      
+      if (!authToken) {
         Alert.alert(
-            'Error',
-            'An unexpected error occurred while submitting your report. Please try again.'
+          'Authentication Required',
+          'You need to be logged in to report a found item. Please log in and try again.',
+          [
+            {
+              text: 'Login',
+              onPress: () => navigation.navigate('Login')
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            }
+          ]
         );
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error verifying authentication:', error);
+      Alert.alert('Error', 'Failed to verify authentication. Please try logging in again.');
+      return false;
+    }
+  };
+
+  const handleSubmit = async () => {
+    // Validation
+    if (!contact) {
+      Alert.alert('Error', 'Please provide contact information.');
+      return;
+    }
+    if (!location) {
+      Alert.alert('Error', 'Please provide the location.');
+      return;
+    }
+    if (!category) {
+      Alert.alert('Error', 'Please select a category.');
+      return;
+    }
+    if (!description) {
+      Alert.alert('Error', 'Please provide a description.');
+      return;
+    }
+    if (!itemName) {
+      Alert.alert('Error', 'Please provide an item name.');
+      return;
+    }
+
+    // Verify authentication before proceeding
+    const isAuthenticated = await verifyAuthentication();
+    if (!isAuthenticated) {
+      return;
+    }
+    
+    try {
+      // Get user ID and auth token
+      const userData = await AsyncStorage.getItem('userData');
+      const authToken = await AsyncStorage.getItem('authToken');
+      
+      if (!authToken) {
+        Alert.alert('Error', 'Please log in to report a found item');
+        navigation.navigate('Login');
+        return;
+      }
+
+      // Modified: Handle userData parsing more safely
+      let userId = null;
+      if (userData) {
+        try {
+          const parsedUserData = JSON.parse(userData);
+          userId = parsedUserData._id || parsedUserData.id || parsedUserData.userId;
+          console.log('User ID:', userId);
+          
+          if (!userId) {
+            console.log('User data structure:', JSON.stringify(parsedUserData));
+          }
+        } catch (parseError) {
+          console.error('Error parsing user data:', parseError);
+        }
+      }
+
+      // Create FormData object
+      const formData = new FormData();
+      
+      // Add userId only if it's a valid string
+      if (userId && typeof userId === 'string' && userId.trim() !== '') {
+        formData.append('userId', userId);
+      }
+      
+      formData.append('contact', contact);
+      formData.append('location', location);
+      formData.append('category', category);
+      formData.append('description', description);
+      formData.append('itemName', itemName);
+      formData.append('time', new Date().toLocaleTimeString());
+      formData.append('date', new Date().toISOString().split('T')[0]);
+
+      // Add coordinates if available
+      if (selectedLocation) {
+        formData.append('latitude', selectedLocation.latitude.toString());
+        formData.append('longitude', selectedLocation.longitude.toString());
+      }
+
+      // Add category-specific attributes
+      if (category === 'Electronics') {
+        if (brand) formData.append('brand', brand);
+        if (model) formData.append('model', model);
+        if (color) formData.append('color', color);
+        if (serialNumber) formData.append('serialNumber', serialNumber);
+      } else if (category === 'Accessories') {
+        if (brand) formData.append('brand', brand);
+        if (material) formData.append('material', material);
+        if (color) formData.append('color', color);
+      } else if (category === 'Clothing') {
+        if (brand) formData.append('brand', brand);
+        if (size) formData.append('size', size);
+        if (color) formData.append('color', color);
+        if (material) formData.append('material', material);
+      } else if (category === 'Documents') {
+        if (documentType) formData.append('documentType', documentType);
+        if (issuingAuthority) formData.append('issuingAuthority', issuingAuthority);
+        if (nameOnDocument) formData.append('nameOnDocument', nameOnDocument);
+      } else {
+        // Others category - add any general attributes
+        if (color) formData.append('color', color);
+        if (brand) formData.append('brand', brand);
+      }
+
+      // Handle photo upload
+      if (photo) {
+        // The photo object is already a URI string from the image picker
+        const photoUri = Platform.OS === 'android' ? photo : photo.replace('file://', '');
+        const photoName = photoUri.split('/').pop();
+        const photoType = 'image/jpeg';
+
+        // Check if photo needs compression
+        const fileInfo = await FileSystem.getInfoAsync(photoUri);
+        if (fileInfo.size > 5 * 1024 * 1024) {
+          const compressedPhoto = await ImageManipulator.manipulateAsync(
+            photoUri,
+            [{ resize: { width: 1024 } }],
+            { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          formData.append('photo', {
+            uri: compressedPhoto.uri,
+            type: photoType,
+            name: photoName
+          });
+        } else {
+          formData.append('photo', {
+            uri: photoUri,
+            type: photoType,
+            name: photoName
+          });
+        }
+      }
+
+      // Use improved axios error handling with timeout
+      try {
+        console.log('Submitting found item to API:', `${API_CONFIG.API_URL}/reportfound`);
+        const response = await axios.post(`${API_CONFIG.API_URL}/reportfound`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${authToken}`
+          },
+          timeout: 30000 // 30 seconds timeout
+        });
+        
+        console.log('API response:', response.data);
+        
+        if (response.data.status === 'success') {
+          // Show success alert
+          Alert.alert(
+            'Success!',
+            'Your found item has been reported. We will notify you if we find any matches!',
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.goBack()
+              }
+            ]
+          );
+          
+          // Add to recent activity
+          await addToRecentActivity();
+        } else {
+          throw new Error('Server returned an unsuccessful status');
+        }
+      } catch (error) {
+        console.error('Error submitting found item report:', error);
+        let errorMessage = 'Failed to report found item. ';
+        
+        if (error.response) {
+          // The request was made and the server responded with a status code
+          // that falls out of the range of 2xx
+          const status = error.response.status;
+          
+          if (status === 404) {
+            console.error(`API endpoint not found: ${API_CONFIG.API_URL}/reportfound`);
+            errorMessage += `Server error: API endpoint not found (404). Please verify the backend server is running at ${API_CONFIG.API_URL}`;
+          } else {
+            errorMessage += `Server error: ${status} - ${error.response.data?.message || 'Unknown error'}`;
+          }
+          
+          // Log additional debugging info
+          console.error('Request URL:', error.config?.url);
+          console.error('Request method:', error.config?.method);
+          console.error('Response data:', error.response?.data);
+        } else if (error.request) {
+          // The request was made but no response was received
+          errorMessage += 'No response received from server. Please check your internet connection.';
+          console.error('Request made to:', API_CONFIG.API_URL);
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          errorMessage += error.message;
+        }
+        
+        // Show detailed alert with the backend URL for debugging
+        Alert.alert(
+          'Error Submitting Item', 
+          `${errorMessage}\n\nAPI URL: ${API_CONFIG.API_URL}\n\nPlease take a screenshot of this error and contact support.`,
+          [{ text: 'OK' }]
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error('Error in form submission process:', error);
+      Alert.alert(
+        'Error',
+        'An unexpected error occurred while submitting your report. Please try again.'
+      );
     }
   };
 

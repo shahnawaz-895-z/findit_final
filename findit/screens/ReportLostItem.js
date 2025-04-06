@@ -276,6 +276,37 @@ const ReportLostItem = () => {
     }
   };
 
+  // Verify authentication token before submission
+  const verifyAuthentication = async () => {
+    try {
+      const authToken = await AsyncStorage.getItem('authToken');
+      
+      if (!authToken) {
+        Alert.alert(
+          'Authentication Required',
+          'You need to be logged in to report a lost item. Please log in and try again.',
+          [
+            {
+              text: 'Login',
+              onPress: () => navigation.navigate('Login')
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            }
+          ]
+        );
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error verifying authentication:', error);
+      Alert.alert('Error', 'Failed to verify authentication. Please try logging in again.');
+      return false;
+    }
+  };
+
   const handleSubmit = async () => {
     // Validation
     if (!contact) {
@@ -300,6 +331,12 @@ const ReportLostItem = () => {
     }
     if (!uniquePoint || uniquePoint.trim() === '') {
       Alert.alert('Error', 'Please provide a unique point for verification. This field is required.');
+      return;
+    }
+
+    // Verify authentication before proceeding
+    const isAuthenticated = await verifyAuthentication();
+    if (!isAuthenticated) {
       return;
     }
 
@@ -484,7 +521,7 @@ const ReportLostItem = () => {
       let response;
       if (!photo) {
         // If no photo, use JSON directly which is more reliable
-        response = await axios.post(`${BACKEND_URL}/reportlost`, jsonPayload, {
+        response = await axios.post(`${BACKEND_URL}/lostitem`, jsonPayload, {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
@@ -493,7 +530,7 @@ const ReportLostItem = () => {
         });
       } else {
         // Otherwise, use formData for photo upload
-        response = await axios.post(`${BACKEND_URL}/reportlost`, formData, {
+        response = await axios.post(`${BACKEND_URL}/lostitem`, formData, {
           headers: headers,
           timeout: 30000, // 30 second timeout
         });
@@ -544,16 +581,34 @@ const ReportLostItem = () => {
       if (error.response) {
         // The request was made and the server responded with a status code
         // that falls out of the range of 2xx
-        errorMessage += `Server error: ${error.response.status} - ${error.response.data?.message || 'Unknown error'}`;
+        const status = error.response.status;
+        
+        if (status === 404) {
+          console.error(`API endpoint not found: ${BACKEND_URL}/lostitem`);
+          errorMessage += `Server error: API endpoint not found (404). Please verify the backend server is running at ${BACKEND_URL}`;
+        } else {
+          errorMessage += `Server error: ${status} - ${error.response.data?.message || 'Unknown error'}`;
+        }
+        
+        // Log additional debugging info
+        console.error('Request URL:', error.config?.url);
+        console.error('Request method:', error.config?.method);
+        console.error('Response data:', error.response?.data);
       } else if (error.request) {
         // The request was made but no response was received
         errorMessage += 'No response received from server. Please check your internet connection.';
+        console.error('Request made to:', BACKEND_URL);
       } else {
         // Something happened in setting up the request that triggered an Error
         errorMessage += error.message;
       }
       
-      Alert.alert('Error', errorMessage);
+      // Show detailed alert with the backend URL for debugging
+      Alert.alert(
+        'Error Submitting Item', 
+        `${errorMessage}\n\nAPI URL: ${BACKEND_URL}\n\nPlease take a screenshot of this error and contact support.`,
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsLoading(false);
     }

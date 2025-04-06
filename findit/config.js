@@ -7,7 +7,7 @@ const API_CONFIG = {
   // Server IP address and port - using environment variables with fallbacks
   IP_ADDRESS: process.env.API_HOST || Platform.select({
     ios: 'localhost',
-    android: '192.168.0.118', // Your actual IPv4 address from ipconfig - CONFIRMED CORRECT
+    android: '192.168.100.10', // Your actual IPv4 address from ipconfig - CONFIRMED CORRECT
     web: 'localhost'
   }),
   PORT: process.env.API_PORT || '5000',
@@ -45,7 +45,7 @@ const API_CONFIG = {
   },
   
   // Other configuration constants
-  POLLING_INTERVAL: 10000, // 10 seconds
+  POLLING_INTERVAL: 5000, // 5 seconds - more frequent polling for notifications
   
   // API Endpoints
   get loginEndpoint() {

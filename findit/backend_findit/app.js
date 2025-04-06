@@ -593,25 +593,22 @@ app.get('/search-users', async (req, res) => {
 });
 
 // **Report Found Item**
-app.post('/reportfound', upload.single('photo'), async (req, res) => {
+app.post('/reportfound', authenticateToken, upload.single('photo'), async (req, res) => {
     try {
-        console.log('Received found item report:', req.body);
-        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude } = req.body;
+        console.log('Received authenticated found item report:', req.body);
+        console.log('User from token:', req.user);
         
-        // Log the user ID for debugging
-        console.log(`User ID from request: ${userId}`);
+        const { contact, location, time, date, description, category, itemName, latitude, longitude } = req.body;
         
-        // Extract userId from the JWT token if not provided in the request
-        let extractedUserId = userId;
-        if ((!extractedUserId || extractedUserId === 'null' || extractedUserId === 'undefined') && req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                extractedUserId = decoded.userId || decoded._id || decoded.id;
-                console.log('Extracted userId from token:', extractedUserId);
-            } catch (tokenError) {
-                console.error('Error extracting userId from token:', tokenError);
-            }
+        // Use userId from token if available
+        const userId = req.user?.id || req.body.userId;
+        
+        if (!userId) {
+            console.log('No userId found in token or request body');
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
         }
         
         // Validation with detailed error messages
@@ -637,11 +634,11 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
 
         // Parse userId properly
         let userIdObj = null;
-        if (extractedUserId && mongoose.Types.ObjectId.isValid(extractedUserId)) {
-            userIdObj = new mongoose.Types.ObjectId(extractedUserId);
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+            userIdObj = new mongoose.Types.ObjectId(userId);
             console.log('Valid ObjectId for userId:', userIdObj);
-        } else if (extractedUserId) {
-            console.log('Invalid ObjectId format for userId:', extractedUserId);
+        } else if (userId) {
+            console.log('Invalid ObjectId format for userId:', userId);
         } else {
             console.log('No userId provided or extracted from token');
         }
@@ -823,10 +820,22 @@ app.post('/reportfound', upload.single('photo'), async (req, res) => {
 });
 
 // **Report Lost Item**
-app.post('/lostitem', upload.single('photo'), async (req, res) => {
+app.post('/lostitem', authenticateToken, upload.single('photo'), async (req, res) => {
     try {
-        console.log('Received lost item report:', req.body);
-        const { contact, location, time, date, description, category, userId, itemName, latitude, longitude, uniquePoint } = req.body;
+        console.log('Received authenticated lost item report:', req.body);
+        console.log('User from token:', req.user);
+        
+        const { contact, location, time, date, description, category, itemName, latitude, longitude, uniquePoint } = req.body;
+        // Use userId from token if available
+        const userId = req.user?.id || req.body.userId;
+        
+        if (!userId) {
+            console.log('No userId found in token or request body');
+            return res.status(400).json({
+                status: 'error',
+                message: 'User ID is required'
+            });
+        }
         
         // Validation with detailed error messages
         const missingFields = [];
@@ -858,7 +867,7 @@ app.post('/lostitem', upload.single('photo'), async (req, res) => {
             date,
             description,
             category,
-            userId: userId || null,
+            userId: userId, // Always use the validated userId from above
             itemName: itemName || description.substring(0, 30),
             uniquePoint: uniquePoint,
             coordinates: {
@@ -1180,10 +1189,21 @@ app.get('/api/notifications/poll/:userId', async (req, res) => {
 
         console.log(`Polling notifications for user: ${userId}, since: ${new Date(parseInt(lastPolled) || 0)}`);
         
+        // Validate userId
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            console.error(`Invalid userId for polling: ${userId}`);
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid user ID format'
+            });
+        }
+
         const query = {
             userId,
             createdAt: { $gt: new Date(parseInt(lastPolled) || 0) }
         };
+
+        console.log('Polling query:', JSON.stringify(query));
 
         // Find notifications with specific field selection
         const notifications = await Notification.find(query)
@@ -1197,6 +1217,8 @@ app.get('/api/notifications/poll/:userId', async (req, res) => {
             `)
             .sort({ createdAt: -1 })
             .limit(50);
+            
+        console.log(`Found ${notifications.length} notifications in polling`);
             
         // Check if we have match notifications and log their content
         const matchNotifications = notifications.filter(n => n.type === 'match_found');
@@ -1229,6 +1251,23 @@ app.get('/api/notifications/poll/:userId', async (req, res) => {
                 }
             }
         }
+        
+        // Check for repost notifications
+        const repostNotifications = notifications.filter(n => n.type === 'lost_item_repost');
+        console.log(`Found ${repostNotifications.length} repost notifications for user ${userId}`);
+        
+        if (repostNotifications.length > 0) {
+            const firstRepost = repostNotifications[0];
+            console.log('Sample repost notification:', JSON.stringify({
+                id: firstRepost._id,
+                type: firstRepost.type,
+                title: firstRepost.title, 
+                message: firstRepost.message,
+                lostItemId: firstRepost.lostItemId,
+                itemName: firstRepost.itemName,
+                createdAt: firstRepost.createdAt
+            }, null, 2));
+        }
 
         res.json({
             success: true,
@@ -1237,7 +1276,10 @@ app.get('/api/notifications/poll/:userId', async (req, res) => {
         });
     } catch (error) {
         console.error('Error polling notifications:', error);
-        res.status(500).json({ error: 'Failed to fetch notifications' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch notifications' 
+        });
     }
 });
 
@@ -1247,6 +1289,16 @@ app.get('/api/notifications/:userId', async (req, res) => {
         const { page = 1, limit = 20 } = req.query;
 
         console.log(`Fetching notifications for user: ${userId}, page: ${page}, limit: ${limit}`);
+        
+        // Validate userId
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            console.error(`Invalid userId for notifications: ${userId}`);
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid user ID format'
+            });
+        }
+        
         const skip = (page - 1) * limit;
 
         // Find notifications with specific field selection to ensure all needed fields are returned
@@ -1293,6 +1345,20 @@ app.get('/api/notifications/:userId', async (req, res) => {
                 }
             }
         }
+        
+        // Check for repost notifications
+        const repostNotifications = notifications.filter(n => n.type === 'lost_item_repost');
+        console.log(`Found ${repostNotifications.length} repost notifications for user ${userId}`);
+        
+        if (repostNotifications.length > 0) {
+            const firstRepost = repostNotifications[0];
+            console.log('Sample repost notification:', JSON.stringify({
+                id: firstRepost._id,
+                type: firstRepost.type,
+                lostItemId: firstRepost.lostItemId,
+                itemName: firstRepost.itemName
+            }, null, 2));
+        }
 
         const total = await Notification.countDocuments({ userId });
 
@@ -1307,7 +1373,8 @@ app.get('/api/notifications/:userId', async (req, res) => {
         console.error('Error fetching notifications:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch notifications'
+            error: 'Failed to fetch notifications',
+            details: error.message
         });
     }
 });
@@ -1315,6 +1382,13 @@ app.get('/api/notifications/:userId', async (req, res) => {
 app.put('/api/notifications/:notificationId/read', async (req, res) => {
     try {
         const { notificationId } = req.params;
+        
+        if (!notificationId || !mongoose.Types.ObjectId.isValid(notificationId)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid notification ID' 
+            });
+        }
 
         const notification = await Notification.findByIdAndUpdate(
             notificationId,
@@ -1323,25 +1397,44 @@ app.put('/api/notifications/:notificationId/read', async (req, res) => {
         );
 
         if (!notification) {
-            return res.status(404).json({ error: 'Notification not found' });
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Notification not found' 
+            });
         }
 
-        res.json(notification);
+        console.log(`Marked notification ${notificationId} as read`);
+        res.json({
+            success: true,
+            notification
+        });
     } catch (error) {
         console.error('Error marking notification as read:', error);
-        res.status(500).json({ error: 'Failed to update notification' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to update notification',
+            details: error.message
+        });
     }
 });
 
 app.put('/api/notifications/:userId/read-all', async (req, res) => {
     try {
         const { userId } = req.params;
+        
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid user ID' 
+            });
+        }
 
         const result = await Notification.updateMany(
             { userId, read: false },
             { read: true }
         );
 
+        console.log(`Marked ${result.modifiedCount} notifications as read for user ${userId}`);
         res.json({
             success: true,
             modifiedCount: result.modifiedCount
@@ -1350,7 +1443,8 @@ app.put('/api/notifications/:userId/read-all', async (req, res) => {
         console.error('Error marking all notifications as read:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to update notifications'
+            error: 'Failed to update notifications',
+            details: error.message
         });
     }
 });
@@ -1371,86 +1465,110 @@ app.get('/api/notifications/:userId/unread-count', async (req, res) => {
     }
 });
 
+// Helper function to sanitize notification data
+function sanitizeNotificationData(data) {
+    if (!data) return {};
+    
+    // Create a new object with sanitized values
+    const sanitized = {};
+    
+    // Convert ObjectIds to strings
+    if (data.matchId) {
+        sanitized.matchId = data.matchId.toString();
+    }
+    
+    if (data.lostItemId) {
+        sanitized.lostItemId = data.lostItemId.toString();
+    }
+    
+    if (data.foundItemId) {
+        sanitized.foundItemId = data.foundItemId.toString();
+    }
+    
+    // Ensure string fields have values
+    sanitized.lostItemName = data.lostItemName || "Lost Item";
+    sanitized.lostItemDescription = data.lostItemDescription || "Description not available";
+    sanitized.foundItemName = data.foundItemName || "Found Item";
+    sanitized.foundItemDescription = data.foundItemDescription || "Description not available";
+    sanitized.itemName = data.itemName || "Item";
+    
+    // Copy date fields
+    if (data.lostDate) sanitized.lostDate = data.lostDate;
+    if (data.foundDate) sanitized.foundDate = data.foundDate;
+    if (data.date) sanitized.date = data.date;
+    if (data.matchDate) sanitized.matchDate = data.matchDate;
+    
+    // Copy other fields
+    if (data.lostLocation) sanitized.lostLocation = data.lostLocation;
+    if (data.foundLocation) sanitized.foundLocation = data.foundLocation;
+    if (data.location) sanitized.location = data.location;
+    if (data.lostTime) sanitized.lostTime = data.lostTime;
+    if (data.foundTime) sanitized.foundTime = data.foundTime;
+    if (data.time) sanitized.time = data.time;
+    if (data.lostCategory) sanitized.lostCategory = data.lostCategory;
+    if (data.foundCategory) sanitized.foundCategory = data.foundCategory;
+    if (data.category) sanitized.category = data.category;
+    if (data.similarityScore) sanitized.similarityScore = data.similarityScore;
+    
+    return sanitized;
+}
+
 // Create notification
 async function createNotification(userId, type, title, message, data = {}) {
     try {
+        // Ensure userId is valid
+        if (!userId) {
+            console.error('No userId provided to createNotification');
+            return null;
+        }
+        
+        // Ensure userId is a string and valid ObjectId
+        let userIdStr = userId.toString();
+        if (!mongoose.Types.ObjectId.isValid(userIdStr)) {
+            console.error(`Invalid userId format in createNotification: ${userIdStr}`);
+            return null;
+        }
+        
+        console.log(`Creating ${type} notification for userId: ${userIdStr}`);
+        console.log(`Title: ${title}`);
+        console.log(`Message: ${message}`);
+        
+        // Sanitize the data
+        const sanitizedData = sanitizeNotificationData(data);
+        
         // For match notifications, ensure descriptions are present and log details
         if (type === 'match_found') {
             console.log('Creating match notification with data structure check:');
-            console.log(`- userId: ${userId}`);
-            console.log(`- matchId: ${data.matchId || 'Missing'}`);
-            
-            // Ensure descriptions are present and valid
-            if (!data.lostItemDescription || data.lostItemDescription === undefined) {
-                console.error('Lost item description is missing in notification data');
-                // Set a default value if missing
-                data.lostItemDescription = "Description not available";
-            } else {
-                console.log('Lost item description is present');
-            }
-            
-            if (!data.foundItemDescription || data.foundItemDescription === undefined) {
-                console.error('Found item description is missing in notification data');
-                // Set a default value if missing
-                data.foundItemDescription = "Description not available";
-            } else {
-                console.log('Found item description is present');
-            }
+            console.log(`- userId: ${userIdStr}`);
+            console.log(`- matchId: ${sanitizedData.matchId || 'Missing'}`);
             
             // Log key properties for debugging
             console.log('Notification data sample:');
-            console.log('- lostItemDescription (sample):', data.lostItemDescription ? 
-                data.lostItemDescription.substring(0, 50) + '...' : 'Missing');
-            console.log('- foundItemDescription (sample):', data.foundItemDescription ? 
-                data.foundItemDescription.substring(0, 50) + '...' : 'Missing');
+            console.log('- lostItemDescription (sample):', sanitizedData.lostItemDescription ? 
+                sanitizedData.lostItemDescription.substring(0, 50) + '...' : 'Missing');
+            console.log('- foundItemDescription (sample):', sanitizedData.foundItemDescription ? 
+                sanitizedData.foundItemDescription.substring(0, 50) + '...' : 'Missing');
+        } else if (type === 'lost_item_repost') {
+            console.log('Creating lost_item_repost notification:');
+            console.log(`- lostItemId: ${sanitizedData.lostItemId || 'Missing'}`);
+            console.log(`- itemName: ${sanitizedData.itemName || 'Missing'}`);
+        } else {
+            console.log(`Creating notification of type: ${type}`);
+            console.log('Data:', JSON.stringify(sanitizedData, null, 2));
         }
         
         // Create notification object with all data explicitly assigned
         const notificationData = {
-            userId,
+            userId: userIdStr,
             type,
-            title,
-            message,
+            title: title || 'Notification',
+            message: message || 'You have a new notification',
             read: false,
             createdAt: new Date()
         };
         
-        // Handle match notification data explicitly
-        if (type === 'match_found') {
-            notificationData.matchId = data.matchId || null;
-            notificationData.lostItemId = data.lostItemId || null;
-            notificationData.foundItemId = data.foundItemId || null;
-            
-            // Lost item details - explicitly assigned
-            notificationData.lostItemName = data.lostItemName || null;
-            notificationData.lostItemDescription = data.lostItemDescription || "Description not available";
-            notificationData.lostLocation = data.lostLocation || null;
-            notificationData.lostDate = data.lostDate || null;
-            notificationData.lostTime = data.lostTime || null;
-            notificationData.lostCategory = data.lostCategory || null;
-            
-            // Found item details - explicitly assigned
-            notificationData.foundItemName = data.foundItemName || null;
-            notificationData.foundItemDescription = data.foundItemDescription || "Description not available";
-            notificationData.foundLocation = data.foundLocation || null;
-            notificationData.foundDate = data.foundDate || null; 
-            notificationData.foundTime = data.foundTime || null;
-            notificationData.foundCategory = data.foundCategory || null;
-            
-            // Match details
-            notificationData.matchDate = data.matchDate || new Date();
-            notificationData.similarityScore = data.similarityScore || 0.5;
-            
-            // General display fields
-            notificationData.location = data.location || null;
-            notificationData.date = data.date || null;
-            notificationData.time = data.time || null;
-            notificationData.category = data.category || null;
-            notificationData.itemName = data.itemName || null;
-        } else {
-            // For non-match notifications, just add all data
-            Object.assign(notificationData, data);
-        }
+        // Add sanitized data to notification
+        Object.assign(notificationData, sanitizedData);
         
         // Create the notification with the prepared data
         const notification = new Notification(notificationData);
@@ -1465,10 +1583,22 @@ async function createNotification(userId, type, title, message, data = {}) {
         const savedNotification = await notification.save();
         console.log(`Notification saved with ID: ${savedNotification._id}`);
         
+        // Verify notification was saved in database
+        try {
+            const verifyNotification = await Notification.findById(savedNotification._id);
+            if (verifyNotification) {
+                console.log(`Successfully verified notification in DB with ID: ${verifyNotification._id}`);
+            } else {
+                console.error(`Could not verify notification in DB with ID: ${savedNotification._id}`);
+            }
+        } catch (verifyError) {
+            console.error('Error verifying notification:', verifyError);
+        }
+        
         return savedNotification;
     } catch (error) {
         console.error('Error creating notification:', error);
-        throw error;
+        return null;  // Return null rather than throwing
     }
 }
 
@@ -2374,6 +2504,248 @@ app.get('/api/dashboard/stats', async (req, res) => {
             status: 'error',
             message: 'Failed to fetch dashboard statistics',
             error: error.message
+        });
+    }
+});
+
+// **Repost Lost Item**
+app.post('/repost-lost-item/:id', authenticateToken, upload.single('photo'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log(`Reposting lost item with ID: ${id}`);
+        
+        // Get the authenticated user from the request
+        const userId = req.user._id;
+        console.log(`User ID from auth token: ${userId}`);
+
+        // Validate ID
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid item ID format'
+            });
+        }
+
+        // Find existing lost item
+        const existingItem = await LostItem.findById(id);
+        if (!existingItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Lost item not found'
+            });
+        }
+
+        console.log(`Found existing item: ${existingItem._id}, userId: ${existingItem.userId || 'none'}`);
+        
+        // Update the userId if not set
+        if (!existingItem.userId && userId) {
+            console.log(`Updating item userId from ${existingItem.userId} to ${userId}`);
+            existingItem.userId = userId;
+        }
+        
+        // Update timestamp to mark as reposted
+        existingItem.repostedAt = new Date();
+        await existingItem.save();
+        console.log(`Item updated with repostedAt: ${existingItem.repostedAt}`);
+
+        // Create notification for the original reporter
+        const itemUserId = existingItem.userId || userId;
+        console.log(`Creating notification for user: ${itemUserId}`);
+        
+        // Send success response first to not keep the user waiting
+        res.status(200).json({
+            status: 'success',
+            message: 'Lost item reposted successfully',
+            item: existingItem
+        });
+
+        // Handle notifications in the background after responding
+        if (itemUserId) {
+            try {
+                console.log(`Creating repost notification for user: ${itemUserId}`);
+                console.log(`Item details for notification:`, {
+                    id: existingItem._id.toString(),
+                    name: existingItem.itemName || existingItem.description.substring(0, 30),
+                    location: existingItem.location,
+                    category: existingItem.category
+                });
+                
+                const repostNotification = await createNotification(
+                    itemUserId,
+                    'lost_item_repost',
+                    'Item Reposted',
+                    `Your lost item '${existingItem.itemName || existingItem.description.substring(0, 30)}' has been reposted for continued searching.`,
+                    {
+                        lostItemId: existingItem._id.toString(),
+                        itemName: existingItem.itemName || existingItem.description.substring(0, 30),
+                        location: existingItem.location,
+                        date: existingItem.date,
+                        time: existingItem.time,
+                        category: existingItem.category
+                    }
+                );
+                
+                if (repostNotification) {
+                    console.log(`Successfully created repost notification with ID: ${repostNotification._id}`);
+                } else {
+                    console.error('Failed to create repost notification - createNotification returned null');
+                }
+                
+                // Verify notification was created
+                const verifyNotification = await Notification.findById(repostNotification?._id);
+                if (verifyNotification) {
+                    console.log(`Verified notification exists in DB with ID: ${verifyNotification._id}`);
+                } else {
+                    console.error(`Failed to verify notification in DB`);
+                }
+            } catch (notifyError) {
+                console.error('Failed to send repost notification:', notifyError);
+            }
+        } else {
+            console.log('No user ID available to send repost notification');
+        }
+
+        // Find potential matches with found items
+        try {
+            console.log(`Finding matches for reposted lost item in category: ${existingItem.category}`);
+            const foundItems = await FoundItem.find({ category: existingItem.category });
+            console.log(`Found ${foundItems.length} found items in the same category`);
+
+            let matchCount = 0;
+            for (const foundItem of foundItems) {
+                try {
+                    console.log(`Comparing reposted lost item ${existingItem._id} with found item ${foundItem._id}`);
+                    
+                    // Call the matching service to get a similarity score
+                    const response = await axios.post(`${process.env.PYTHON_API_URL || 'http://localhost:5001'}/match`, {
+                        lost_desc: existingItem.description,
+                        found_desc: foundItem.description
+                    }, { timeout: 8000 });
+                    
+                    console.log(`Match result: similarity_score: ${response.data.similarity_score}`);
+                    
+                    // Check if this is a potential match - lowering threshold to 0.3 for testing
+                    if (response.data && response.data.similarity_score >= 0.3) {
+                        // Check if a match already exists to avoid duplicates
+                        const existingMatch = await Match.findOne({
+                            lostItemId: existingItem._id,
+                            foundItemId: foundItem._id
+                        });
+
+                        if (existingMatch) {
+                            console.log(`Match already exists between these items, skipping`);
+                            continue;
+                        }
+
+                        // Create a new match record
+                        const match = new Match({
+                            lostItemId: existingItem._id,
+                            lostUserId: existingItem.userId || userId,
+                            foundItemId: foundItem._id,
+                            foundUserId: foundItem.userId,
+                            similarityScore: response.data.similarity_score,
+                            status: 'pending'
+                        });
+                        
+                        await match.save();
+                        console.log(`Created match between reposted lost item ${existingItem._id} and found item ${foundItem._id}`);
+                        matchCount++;
+                        
+                        // Notify the user who reported the lost item
+                        const lostItemUserId = existingItem.userId || userId;
+                        if (lostItemUserId) {
+                            try {
+                                console.log(`Creating match notification for lost item reporter: ${lostItemUserId}`);
+                                const lostNotification = await createNotification(
+                                    lostItemUserId,
+                                    'match_found',
+                                    'Match Found!',
+                                    `Good news! Your lost item '${existingItem.itemName || existingItem.description.substring(0, 30)}' matches a found item reported by another user.`,
+                                    { 
+                                        matchId: match._id.toString(), 
+                                        lostItemId: existingItem._id.toString(),
+                                        foundItemId: foundItem._id.toString(),
+                                        lostItemName: existingItem.itemName || existingItem.description.substring(0, 30),
+                                        lostItemDescription: existingItem.description,
+                                        foundItemName: foundItem.itemName || foundItem.description.substring(0, 30),
+                                        foundItemDescription: foundItem.description,
+                                        matchDate: new Date(),
+                                        similarityScore: response.data.similarity_score
+                                    }
+                                );
+                                
+                                if (lostNotification) {
+                                    console.log(`Match notification created for lost item user with ID: ${lostNotification._id}`);
+                                    
+                                    // Verify notification was created
+                                    const verifyLostNotification = await Notification.findById(lostNotification._id);
+                                    if (verifyLostNotification) {
+                                        console.log(`Verified lost item notification exists in DB: ${verifyLostNotification._id}`);
+                                    } else {
+                                        console.error(`Failed to verify lost item notification with ID: ${lostNotification._id}`);
+                                    }
+                                } else {
+                                    console.error(`Failed to create match notification for lost item user - createNotification returned null`);
+                                }
+                            } catch (notifyError) {
+                                console.error('Failed to send match notification to lost item reporter:', notifyError);
+                            }
+                        }
+
+                        // Notify the user who found the item
+                        if (foundItem.userId) {
+                            try {
+                                console.log(`Creating match notification for found item reporter: ${foundItem.userId}`);
+                                const foundNotification = await createNotification(
+                                    foundItem.userId,
+                                    'match_found',
+                                    'Match Found!',
+                                    `A lost item has been reported that matches the item you found: '${foundItem.itemName || foundItem.description.substring(0, 30)}'.`,
+                                    { 
+                                        matchId: match._id.toString(), 
+                                        lostItemId: existingItem._id.toString(),
+                                        foundItemId: foundItem._id.toString(),
+                                        lostItemName: existingItem.itemName || existingItem.description.substring(0, 30),
+                                        lostItemDescription: existingItem.description,
+                                        foundItemName: foundItem.itemName || foundItem.description.substring(0, 30),
+                                        foundItemDescription: foundItem.description,
+                                        matchDate: new Date(),
+                                        similarityScore: response.data.similarity_score
+                                    }
+                                );
+                                
+                                if (foundNotification) {
+                                    console.log(`Match notification created for found item user with ID: ${foundNotification._id}`);
+                                    
+                                    // Verify notification was created
+                                    const verifyFoundNotification = await Notification.findById(foundNotification._id);
+                                    if (verifyFoundNotification) {
+                                        console.log(`Verified found item notification exists in DB: ${verifyFoundNotification._id}`);
+                                    } else {
+                                        console.error(`Failed to verify found item notification with ID: ${foundNotification._id}`);
+                                    }
+                                } else {
+                                    console.error(`Failed to create match notification for found item user - createNotification returned null`);
+                                }
+                            } catch (notifyError) {
+                                console.error('Failed to send match notification to found item reporter:', notifyError);
+                            }
+                        }
+                    }
+                } catch (matchError) {
+                    console.error(`Error matching reposted lost item with found item ${foundItem._id}:`, matchError);
+                }
+            }
+            console.log(`Completed matching process. Created ${matchCount} matches.`);
+        } catch (matchingError) {
+            console.error('Error in background matching for reposted item:', matchingError);
+        }
+    } catch (error) {
+        console.error('Error reposting lost item:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error reposting lost item',
+            details: error.message
         });
     }
 });

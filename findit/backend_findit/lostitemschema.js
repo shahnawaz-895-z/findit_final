@@ -109,12 +109,17 @@ const lostItemSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  repostedAt: {
+    type: Date,
+    default: null
   }
 });
 
 // Create indexes for efficient querying
 lostItemSchema.index({ category: 1 });
 lostItemSchema.index({ createdAt: -1 });
+lostItemSchema.index({ repostedAt: -1 });
 
 const LostItem = mongoose.model('LostItem', lostItemSchema);
 export default LostItem;
