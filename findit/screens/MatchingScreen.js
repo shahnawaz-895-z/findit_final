@@ -476,7 +476,7 @@ export default function MatchingScreen({ navigation, route }) {
         const contactInfo = isLostReporter ? 
             (otherItem.contact || 'Contact information not available') : 
             (relevantItem.contact || 'Contact information not available');
-
+        
         return (
             <View style={styles.matchCard}>
                 {/* Match confidence indicator */}
@@ -490,19 +490,19 @@ export default function MatchingScreen({ navigation, route }) {
                     
                     <View style={styles.itemDetailsContainer}>
                         <View style={styles.itemDetailsLeft}>
-                            <View style={styles.categoryContainer}>
+                    <View style={styles.categoryContainer}>
                                 <Ionicons name="pricetag" size={18} color="#3d0c45" style={{marginRight: 5}} />
-                                <Text style={styles.matchItemCategory}>{category}</Text>
-                            </View>
+                        <Text style={styles.matchItemCategory}>{category}</Text>
+                    </View>
                             
                             <Text style={styles.itemNameText}>{itemName}</Text>
                             
-                            <View style={styles.descriptionContainer}>
-                                <Text style={styles.descriptionLabel}>Description:</Text>
-                                <Text style={styles.matchItemDescription} numberOfLines={2}>
-                                    {description}
-                                </Text>
-                            </View>
+                    <View style={styles.descriptionContainer}>
+                        <Text style={styles.descriptionLabel}>Description:</Text>
+                        <Text style={styles.matchItemDescription} numberOfLines={2}>
+                            {description}
+                        </Text>
+                    </View>
                             
                             <View style={styles.locationContainer}>
                                 <Ionicons name="location" size={16} color="#666" style={{marginRight: 5}} />
@@ -514,11 +514,11 @@ export default function MatchingScreen({ navigation, route }) {
                             <View style={styles.matchStatusBadge}>
                                 <Text style={styles.matchStatusText}>
                                     {isLostReporter ? "LOST" : "FOUND"}
-                                </Text>
+                        </Text>
                             </View>
-                        </View>
                     </View>
-                    
+                </View>
+                
                     <Text style={styles.matchItemTime}>
                         Matched on {date}
                     </Text>
@@ -529,10 +529,10 @@ export default function MatchingScreen({ navigation, route }) {
                         
                         <View style={styles.contactButtonsRow}>
                             {/* Message Button */}
-                            <TouchableOpacity 
-                                style={styles.contactButton}
-                                onPress={() => navigateToChat(item)}
-                            >
+                <TouchableOpacity 
+                    style={styles.contactButton}
+                    onPress={() => navigateToChat(item)}
+                >
                                 <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
                                 <Text style={styles.contactButtonText}>Message</Text>
                             </TouchableOpacity>
@@ -580,7 +580,7 @@ export default function MatchingScreen({ navigation, route }) {
                             <TouchableOpacity 
                                 style={[styles.contactButton, styles.detailsButton]}
                                 onPress={() => {
-                                    navigation.navigate('ItemDetailsScreen', {
+                                    navigation.navigate('ItemDetails', {
                                         itemId: otherItem._id,
                                         itemType: isLostReporter ? 'found' : 'lost'
                                     });
@@ -588,7 +588,7 @@ export default function MatchingScreen({ navigation, route }) {
                             >
                                 <Ionicons name="information-circle" size={20} color="#fff" />
                                 <Text style={styles.contactButtonText}>Details</Text>
-                            </TouchableOpacity>
+                </TouchableOpacity>
                         </View>
                         
                         {/* Contact info display */}
