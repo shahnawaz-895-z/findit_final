@@ -2,12 +2,16 @@
 // Centralized configuration for server connection
 import { Platform } from 'react-native';
 
+// Server IP Address - this is your machine's IP on the local network
+// To access the server from other devices on the network, use: http://192.168.0.118:5000
+const SERVER_IP = '192.168.100.10';
+
 // API Configuration
 const API_CONFIG = {
   // Server IP address and port - using environment variables with fallbacks
   IP_ADDRESS: process.env.API_HOST || Platform.select({
-    ios: 'localhost',
-    android: '192.168.100.10', // Your actual IPv4 address from ipconfig - CONFIRMED CORRECT
+    ios: SERVER_IP, // Using the actual IP instead of localhost for iOS to work on real devices
+    android: SERVER_IP, // Your actual IPv4 address
     web: 'localhost'
   }),
   PORT: process.env.API_PORT || '5000',

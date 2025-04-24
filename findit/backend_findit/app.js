@@ -11,12 +11,14 @@ import FoundItem from './founditemschema.js';
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import LostItem from './lostitemschema.js';
+import ReturnedItem from './returneditemschema.js';
 import Message from './messageschema.js';
 import Notification from './notificationschema.js';
 import natural from 'natural';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import { findPotentialMatches } from './matching.js';
+import os from 'os';
 
 // Load environment variables
 dotenv.config();
@@ -1605,12 +1607,30 @@ async function createNotification(userId, type, title, message, data = {}) {
 // **Start Server**
 const PORT = process.env.PORT || 5000;
 
+// Get the server's IP address
+function getServerIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            // Skip over non-IPv4 and internal (loopback) addresses
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost'; // Fallback to localhost if no external IP found
+}
+
+const SERVER_IP = getServerIP();
+
 server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
         console.error(`Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
         // Try the next port
         server.listen(PORT + 1, '0.0.0.0', () => {
             console.log(`Server running on http://0.0.0.0:${PORT + 1}`);
+            console.log(`For local access use: http://localhost:${PORT + 1}`);
+            console.log(`For network access use: http://${SERVER_IP}:${PORT + 1}`);
         });
     } else {
         console.error('Server error:', error);
@@ -1620,7 +1640,8 @@ server.on('error', (error) => {
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log(`For local access use: http://localhost:${PORT}`);
-    console.log(`For network access use: http://<your-ip-address>:${PORT}`);
+    console.log(`For network access use: http://${SERVER_IP}:${PORT}`);
+    console.log(`Mobile devices should connect to: http://${SERVER_IP}:${PORT}`);
 });
 
 // Helper function to normalize text for better matching
@@ -2746,6 +2767,307 @@ app.post('/repost-lost-item/:id', authenticateToken, upload.single('photo'), asy
             status: 'error',
             message: 'Error reposting lost item',
             details: error.message
+        });
+    }
+});
+
+// **Record a match between a lost and found item**
+app.post('/api/record-match', authenticateToken, async (req, res) => {
+    try {
+        const { lostItemId, foundItemId, similarityScore, lostItemDescription, foundItemDescription, createNotifications } = req.body;
+        const userId = req.user._id;
+
+        console.log(`Recording match between lost item ${lostItemId} and found item ${foundItemId}`);
+        console.log(`Similarity score: ${similarityScore}`);
+        console.log(`Creating notifications: ${createNotifications}`);
+
+        // Validate input
+        if (!lostItemId || !foundItemId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Both lost and found item IDs are required'
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(lostItemId) || !mongoose.Types.ObjectId.isValid(foundItemId)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid item ID format'
+            });
+        }
+
+        // Get lost and found items
+        const lostItem = await LostItem.findById(lostItemId);
+        const foundItem = await FoundItem.findById(foundItemId);
+
+        if (!lostItem || !foundItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'One or both items not found'
+            });
+        }
+
+        console.log(`Found lost item: ${lostItem.itemName || 'unnamed'}`);
+        console.log(`Found found item: ${foundItem.itemName || 'unnamed'}`);
+
+        // Check if a match already exists
+        const existingMatch = await Match.findOne({
+            lostItemId: lostItemId,
+            foundItemId: foundItemId
+        });
+
+        if (existingMatch) {
+            console.log(`Match already exists between these items`);
+            return res.status(409).json({
+                status: 'warning',
+                message: 'A match already exists between these items',
+                matchId: existingMatch._id
+            });
+        }
+
+        // Determine user IDs
+        const lostUserId = lostItem.userId || userId;
+        const foundUserId = foundItem.userId || userId;
+
+        console.log(`Lost user ID: ${lostUserId}`);
+        console.log(`Found user ID: ${foundUserId}`);
+
+        // Create a new match
+        const match = new Match({
+            lostItemId: lostItemId,
+            lostUserId: lostUserId,
+            foundItemId: foundItemId,
+            foundUserId: foundUserId,
+            similarityScore: similarityScore,
+            status: 'pending',
+            matchDate: new Date()
+        });
+
+        await match.save();
+        console.log(`Created match with ID: ${match._id}`);
+
+        // Create notifications if requested
+        if (createNotifications) {
+            // Only create notifications if the lost and found items belong to different users
+            if (lostUserId.toString() !== foundUserId.toString()) {
+                // Create notification for lost item user
+                try {
+                    console.log(`Creating notification for lost item user ${lostUserId}`);
+                    const lostNotification = await createNotification(
+                        lostUserId,
+                        'match_found',
+                        'Match Found!',
+                        `Good news! Your lost item '${lostItem.itemName || lostItem.description.substring(0, 30)}' matches a found item reported by another user.`,
+                        { 
+                            matchId: match._id.toString(), 
+                            lostItemId: lostItem._id.toString(),
+                            foundItemId: foundItem._id.toString(),
+                            lostItemName: lostItem.itemName || lostItem.description.substring(0, 30),
+                            lostItemDescription: lostItemDescription || lostItem.description,
+                            foundItemName: foundItem.itemName || foundItem.description.substring(0, 30),
+                            foundItemDescription: foundItemDescription || foundItem.description,
+                            matchDate: new Date(),
+                            similarityScore: similarityScore
+                        }
+                    );
+                    
+                    if (lostNotification) {
+                        console.log(`Created notification for lost item user: ${lostNotification._id}`);
+                    }
+                } catch (notifyError) {
+                    console.error('Error creating notification for lost item user:', notifyError);
+                }
+
+                // Create notification for found item user
+                try {
+                    console.log(`Creating notification for found item user ${foundUserId}`);
+                    const foundNotification = await createNotification(
+                        foundUserId,
+                        'match_found',
+                        'Match Found!',
+                        `A lost item has been reported that matches the item you found: '${foundItem.itemName || foundItem.description.substring(0, 30)}'.`,
+                        { 
+                            matchId: match._id.toString(), 
+                            lostItemId: lostItem._id.toString(),
+                            foundItemId: foundItem._id.toString(),
+                            lostItemName: lostItem.itemName || lostItem.description.substring(0, 30),
+                            lostItemDescription: lostItemDescription || lostItem.description,
+                            foundItemName: foundItem.itemName || foundItem.description.substring(0, 30),
+                            foundItemDescription: foundItemDescription || foundItem.description,
+                            matchDate: new Date(),
+                            similarityScore: similarityScore
+                        }
+                    );
+                    
+                    if (foundNotification) {
+                        console.log(`Created notification for found item user: ${foundNotification._id}`);
+                    }
+                } catch (notifyError) {
+                    console.error('Error creating notification for found item user:', notifyError);
+                }
+            } else {
+                console.log(`Skipping notifications as both items belong to the same user: ${lostUserId}`);
+            }
+        }
+
+        // Return success
+        res.status(200).json({
+            status: 'success',
+            message: 'Match recorded successfully',
+            matchId: match._id
+        });
+    } catch (error) {
+        console.error('Error recording match:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Error recording match',
+            details: error.message
+        });
+    }
+});
+
+// API route to get all returned items
+app.get('/returned-items', authenticateToken, async (req, res) => {
+    try {
+        const returnedItems = await ReturnedItem.find()
+            .sort({ returnedAt: -1 });
+        
+        return res.status(200).json({
+            status: 'success',
+            items: returnedItems
+        });
+    } catch (error) {
+        console.error('Error fetching returned items:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch returned items',
+            error: error.message
+        });
+    }
+});
+
+// API route to return a lost or found item
+app.post('/return-item', authenticateToken, async (req, res) => {
+    try {
+        const { itemId, itemType, returnNotes } = req.body;
+        
+        if (!itemId || !itemType) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Item ID and type are required'
+            });
+        }
+        
+        // Validate item type
+        if (itemType !== 'lost' && itemType !== 'found') {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Invalid item type. Must be either "lost" or "found"'
+            });
+        }
+        
+        // Get the correct model based on itemType
+        const ItemModel = itemType === 'lost' ? LostItem : FoundItem;
+        const itemTypeForSchema = itemType === 'lost' ? 'LostItem' : 'FoundItem';
+        
+        // Find the original item
+        const originalItem = await ItemModel.findById(itemId);
+        
+        if (!originalItem) {
+            return res.status(404).json({
+                status: 'error',
+                message: `${itemType === 'lost' ? 'Lost' : 'Found'} item not found`
+            });
+        }
+
+        try {  
+            // Create a returned item record
+            const returnedItem = new ReturnedItem({
+                itemId: originalItem._id,
+                itemType: itemTypeForSchema,
+                originalItem: originalItem.toObject(),
+                returnedBy: req.user.id,
+                returnNotes,
+                itemName: originalItem.itemName || 'Unnamed Item',
+                category: originalItem.category || 'Uncategorized',
+                location: originalItem.location || 'Unknown',
+                date: originalItem.date || new Date(),
+                photo: originalItem.photo
+            });
+            
+            await returnedItem.save();
+            
+            // Delete the original item
+            await ItemModel.findByIdAndDelete(itemId);
+            
+            // Create a notification for the original reporter
+            try {
+                await createNotification(
+                    originalItem.userId,
+                    'item_returned',
+                    'Item Returned',
+                    `Your ${itemType} item "${originalItem.itemName}" has been marked as returned.`,
+                    {
+                        itemName: originalItem.itemName || 'Unnamed Item'
+                    }
+                );
+            } catch (notificationError) {
+                console.error('Error creating notification:', notificationError);
+                // Continue even if notification fails
+            }
+            
+            return res.status(200).json({
+                status: 'success',
+                message: 'Item has been successfully marked as returned',
+                returnedItem
+            });
+        } catch (innerError) {
+            console.error('Error in return item operation:', innerError);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Failed to process return item operation',
+                error: innerError.message
+            });
+        }
+    } catch (error) {
+        console.error('Error returning item:', error);
+        // Ensure we always return a JSON response
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to return item',
+            error: error.message
+        });
+    }
+});
+
+// API route to get returned items for a specific user
+app.get('/user-returned-items/:userId', authenticateToken, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Check if user has permission to access these items
+        if (req.user.id !== userId && req.user.role !== 'admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'You do not have permission to access these items'
+            });
+        }
+        
+        // Find all items where this user was the original reporter
+        const returnedItems = await ReturnedItem.find({
+            'originalItem.userId': userId
+        }).sort({ returnedAt: -1 });
+        
+        return res.status(200).json({
+            status: 'success',
+            items: returnedItems
+        });
+    } catch (error) {
+        console.error('Error fetching user returned items:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch returned items',
+            error: error.message
         });
     }
 });

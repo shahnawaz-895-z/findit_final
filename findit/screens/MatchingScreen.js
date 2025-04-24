@@ -288,11 +288,14 @@ export default function MatchingScreen({ navigation, route }) {
             const response = await api.post('/api/record-match', {
                 lostItemId,
                 foundItemId,
-                similarityScore: similarity
+                similarityScore: similarity,
+                lostItemDescription: lostDesc,
+                foundItemDescription: foundDesc,
+                createNotifications: true // Flag to tell backend to create notifications
             });
 
             if (response.data.status === 'success') {
-                Alert.alert('Success', 'Match recorded successfully!');
+                Alert.alert('Success', 'Match recorded successfully! Notifications have been sent to all parties involved.');
                 
                 // Clear the form
                 setLostDesc('');
@@ -315,7 +318,7 @@ export default function MatchingScreen({ navigation, route }) {
         } finally {
             setIsLoading(false);
         }
-    }, [api, similarity, lostItemId, foundItemId, userId, fetchUserMatches]);
+    }, [api, similarity, lostItemId, foundItemId, userId, fetchUserMatches, lostDesc, foundDesc]);
 
     // Optimize browseItems with useCallback
     const browseItems = useCallback((type) => {

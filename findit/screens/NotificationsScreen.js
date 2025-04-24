@@ -18,6 +18,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_CONFIG from '../config';
 import { formatDistanceToNow } from 'date-fns';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import axios from 'axios';
+import { useRef } from 'react';
+import { Vibration } from 'react-native';
 
 // Get the status bar height for proper padding
 const STATUSBAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
@@ -26,123 +29,138 @@ export default function NotificationsScreen({ navigation }) {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
-    const [lastPolled, setLastPolled] = useState(Date.now());
-    const isFocused = useIsFocused();
-    const [lostItems, setLostItems] = useState([]);
-    const [loadingLostItems, setLoadingLostItems] = useState(true);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [userId, setUserId] = useState(null);
+    const [pollingInterval, setPollingInterval] = useState(null);
+    const [matches, setMatches] = useState([]);
+    const [loadingMatches, setLoadingMatches] = useState(true);
+    const lastPolledRef = useRef(null);
+    const [allLostItems, setAllLostItems] = useState([]);
 
     // Get userId from storage
     const getUserId = async () => {
         try {
-            console.log('Getting userData from AsyncStorage');
             const userData = await AsyncStorage.getItem('userData');
-            console.log('userData from storage:', userData);
-            
-            if (!userData) {
-                console.log('No userData found in AsyncStorage');
-                
-                // Try to get user ID from token as fallback
-                try {
-                    const token = await AsyncStorage.getItem('authToken');
-                    if (token) {
-                        console.log('Token found, will use this for authenticated requests');
-                        // We don't extract userId from token here, just acknowledge we have a token
-                        // for authenticated requests
-                    } else {
-                        console.log('No auth token found in AsyncStorage');
-                    }
-                } catch (tokenError) {
-                    console.error('Error getting authToken:', tokenError);
-                }
-                
-                return null;
+            if (userData) {
+                const data = JSON.parse(userData);
+                setUserId(data.id);
+                return data.id;
             }
-            
-            try {
-                const parsedData = JSON.parse(userData);
-                console.log('Parsed userData:', parsedData);
-                
-                if (parsedData && parsedData._id) {
-                    console.log('Found userId:', parsedData._id);
-                    return parsedData._id;
-                } else {
-                    console.log('userData exists but contains no _id property');
-                    return null;
-                }
-            } catch (parseError) {
-                console.error('Error parsing userData JSON:', parseError);
-                console.log('Raw userData content:', userData);
-                return null;
-            }
+            return null;
         } catch (error) {
-            console.error('Error getting userId from AsyncStorage:', error);
+            console.error('Error getting user ID:', error);
             return null;
         }
     };
 
-    // Fetch all lost items
-    const fetchAllLostItems = async () => {
+    // Initial load
+    useEffect(() => {
+        const loadData = async () => {
+            const id = await getUserId();
+            if (id) {
+                fetchNotifications();
+                fetchUserMatches(id);
+                
+                // Start polling for new notifications
+                const interval = setInterval(() => {
+                    pollNotifications();
+                }, API_CONFIG.POLLING_INTERVAL || 5000);
+                
+                setPollingInterval(interval);
+                
+                // Count unread notifications
+                updateUnreadCount();
+            }
+        };
+        
+        loadData();
+        
+        return () => {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+        };
+    }, []);
+
+    // Update unread count based on current notifications
+    const updateUnreadCount = () => {
+        const count = notifications.filter(item => !item.read).length;
+        setUnreadCount(count);
+    };
+    
+    // Update unread count whenever notifications change
+    useEffect(() => {
+        updateUnreadCount();
+    }, [notifications]);
+
+    // Fetch user's matches
+    const fetchUserMatches = async (userId) => {
         try {
-            setLoadingLostItems(true);
-            console.log('Fetching all lost items...');
-            console.log('API URL:', API_CONFIG.API_URL);
+            setLoadingMatches(true);
+            console.log('Fetching matches for user:', userId);
             
-            // Use simple fetch without special headers or options to troubleshoot
-            const response = await fetch(`${API_CONFIG.API_URL}/all-lost-items`);
-            console.log('Response status:', response.status);
+            const response = await fetch(`${API_CONFIG.API_URL}/api/matches/user/${userId}`);
+            console.log('Match response status:', response.status);
             
-            // If the response is not OK, try the alternate URL
             if (!response.ok) {
-                console.log('First attempt failed, trying alternate URL...');
-                const altResponse = await fetch(`${API_CONFIG.API_URL}/api/all-lost-items`);
-                
-                if (!altResponse.ok) {
-                    console.error('Both attempts failed');
-                    setLostItems([]);
-                    setLoadingLostItems(false);
-                    return;
-                }
-                
-                const data = await altResponse.json();
-                console.log('Got data from alternate URL:', data.count || 0, 'items');
-                setLostItems(data.items || []);
-                setLoadingLostItems(false);
+                console.error('Failed to fetch user matches');
+                setMatches([]);
+                setLoadingMatches(false);
                 return;
             }
             
             const data = await response.json();
-            console.log('Got data from primary URL:', data.count || 0, 'items');
-            setLostItems(data.items || []);
+            console.log('Total matches in database:', data.totalMatches || 0);
+            console.log(`Found ${data.matches?.length || 0} matches for user ${userId}`);
+            
+            // Transform matches to display format
+            const matchItems = data.matches?.map(match => ({
+                _id: match._id,
+                itemName: match.lostItem?.itemName || match.foundItem?.itemName || 'Matched Item',
+                location: match.lostItem?.location || match.foundItem?.location || 'Unknown',
+                date: match.lostItem?.date || match.foundItem?.date || match.createdAt,
+                time: match.lostItem?.time || match.foundItem?.time,
+                category: match.lostItem?.category || match.foundItem?.category || 'Uncategorized',
+                photo: match.lostItem?.photo || match.foundItem?.photo,
+                similarityScore: match.similarityScore,
+                matchId: match._id,
+                lostItemId: match.lostItem?._id,
+                foundItemId: match.foundItem?._id,
+                isMatch: true
+            })) || [];
+            
+            setMatches(matchItems);
         } catch (error) {
-            console.error('Error fetching all lost items:', error.message);
-            setLostItems([]);
+            console.error('Error fetching user matches:', error.message);
+            setMatches([]);
         } finally {
-            setLoadingLostItems(false);
+            setLoadingMatches(false);
         }
     };
 
     // Fetch notifications with pagination
     const fetchNotifications = async (pageNum = 1, shouldRefresh = false) => {
         try {
-            const userId = await getUserId();
-            console.log('Fetching notifications for userId:', userId);
-            if (!userId) {
+            const id = await getUserId();
+            console.log('Fetching notifications for userId:', id);
+            if (!id) {
                 console.log('No userId found, returning');
                 setLoading(false);
                 setRefreshing(false);
                 return;
             }
 
-            const url = `${API_CONFIG.API_URL}/api/notifications/${userId}?page=${pageNum}&limit=20`;
+            // Fetch regular notifications from API
+            setLoading(true);
+            setError(null);
+            
+            const url = `${API_CONFIG.API_URL}/api/notifications/${id}?page=${pageNum}&limit=20`;
             console.log('Fetching notifications from:', url);
             
-            setLoading(true);
-            console.log(`Making request to: ${url}`);
-            
             const response = await fetch(url);
-            
             console.log('Notifications response status:', response.status);
             
             if (!response.ok) {
@@ -150,7 +168,7 @@ export default function NotificationsScreen({ navigation }) {
                 console.error('Error response from server:', errorData);
                 setLoading(false);
                 setRefreshing(false);
-                Alert.alert('Error', 'Failed to fetch notifications');
+                setError('Failed to fetch notifications');
                 return;
             }
             
@@ -162,60 +180,102 @@ export default function NotificationsScreen({ navigation }) {
             }
 
             const notificationsList = data.notifications || [];
-            console.log(`Received ${notificationsList.length} notifications for user ${userId}`);
+            console.log(`Received ${notificationsList.length} notifications for user ${id}`);
             
-            if (notificationsList.length === 0) {
-                console.log('No notifications received from server');
-                setLoading(false);
-                setRefreshing(false);
+            // Fetch match-based notifications
+            console.log('Fetching match data for notifications');
+            const matchesUrl = `${API_CONFIG.API_URL}/api/view-matches?userId=${id}`;
+            const matchesResponse = await fetch(matchesUrl);
+            
+            let matchNotifications = [];
+            
+            if (matchesResponse.ok) {
+                const matchesData = await matchesResponse.json();
+                const allMatches = matchesData.matches || [];
+                console.log(`Received ${allMatches.length} matches`);
                 
-                // If refreshing, clear notifications
-                if (shouldRefresh) {
-                    setNotifications([]);
-                }
-                return;
-            }
-            
-            // Log all notification types we received
-            const notificationTypes = {};
-            notificationsList.forEach(notification => {
-                notificationTypes[notification.type] = (notificationTypes[notification.type] || 0) + 1;
-            });
-            console.log('Notification types received:', notificationTypes);
-            
-            // Log the most recent notification
-            if (notificationsList.length > 0) {
-                const mostRecent = notificationsList[0];
-                console.log('Most recent notification:', JSON.stringify({
-                    id: mostRecent._id,
-                    type: mostRecent.type,
-                    title: mostRecent.title,
-                    message: mostRecent.message,
-                    createdAt: mostRecent.createdAt,
-                    read: mostRecent.read,
-                    matchId: mostRecent.matchId,
-                    lostItemId: mostRecent.lostItemId,
-                    foundItemId: mostRecent.foundItemId
-                }, null, 2));
-            }
-            
-            // Process match notifications to ensure descriptions are available
-            const processedNotifications = notificationsList.map(notification => {
-                if (notification.type === 'match_found') {
-                    console.log(`Processing match notification ${notification._id}`);
+                // Generate notifications from ALL matches, regardless of user involvement
+                // This ensures matches.length == matchNotifications.length
+                matchNotifications = allMatches.map(match => {
+                    // Check if this match involves the current user
+                    const isLostItemUser = match.lostUserId && match.lostUserId.toString() === id.toString();
+                    const isFoundItemUser = match.foundUserId && match.foundUserId.toString() === id.toString();
                     
+                    let message, title;
+                    
+                    if (isLostItemUser) {
+                        // User reported the lost item
+                        const itemName = match.lostItemId?.itemName || 'unknown item';
+                        title = "Match Found!";
+                        message = `Someone may have found your lost ${itemName}!`;
+                    } else if (isFoundItemUser) {
+                        // User reported the found item
+                        const itemName = match.foundItemId?.itemName || 'unknown item';
+                        const lostItemName = match.lostItemId?.itemName || 'item';
+                        title = "Match Found!";
+                        message = `Your found item matches with someone's lost ${lostItemName}!`;
+                    } else {
+                        // This is a match that doesn't involve the current user
+                        // But we still create a notification to ensure matches.length == matchNotifications.length
+                        title = "System Match";
+                        message = `Match between ${match.lostItemId?.itemName || 'lost item'} and ${match.foundItemId?.itemName || 'found item'}`;
+                    }
+                    
+                    // Generate a notification-like object for each match
+                    return {
+                        _id: `match_${match._id}`,
+                        type: 'match_found',
+                        title: title,
+                        message: message,
+                        createdAt: match.createdAt,
+                        read: false, // Assume unread by default
+                        matchId: match._id,
+                        lostItemId: match.lostItemId?._id,
+                        foundItemId: match.foundItemId?._id,
+                        lostItemName: match.lostItemId?.itemName,
+                        foundItemName: match.foundItemId?.itemName,
+                        lostItemDescription: match.lostItemId?.description,
+                        foundItemDescription: match.foundItemId?.description,
+                        lostItemLocation: match.lostItemId?.location,
+                        foundItemLocation: match.foundItemId?.location,
+                        lostItemCategory: match.lostItemId?.category,
+                        foundItemCategory: match.foundItemId?.category,
+                        lostItemDate: match.lostItemId?.date,
+                        foundItemDate: match.foundItemId?.date,
+                        similarityScore: match.similarityScore,
+                        isLostItemUser: isLostItemUser,
+                        isFoundItemUser: isFoundItemUser,
+                        category: isLostItemUser ? match.lostItemId?.category : match.foundItemId?.category,
+                        location: isLostItemUser ? match.lostItemId?.location : match.foundItemId?.location,
+                        matchDate: match.createdAt
+                    };
+                });
+                
+                // Store the match count to display in the UI
+                setMatches(matchesData.matches || []);
+            } else {
+                console.error('Failed to fetch matches for notifications:', await matchesResponse.text());
+            }
+            
+            // Combine regular notifications with match-based notifications
+            const combinedNotifications = [...matchNotifications, ...notificationsList];
+            
+            // Sort by creation date (newest first)
+            combinedNotifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            // Process notifications to ensure all required data is available
+            const processedNotifications = combinedNotifications.map(notification => {
                     // Make a deep copy to avoid reference issues
                     const processedNotification = {...notification};
                     
+                if (notification.type === 'match_found') {
                     // Ensure lost item description exists
                     if (!processedNotification.lostItemDescription) {
-                        console.log('Lost item description missing, using fallback');
                         processedNotification.lostItemDescription = "Description not available";
                     }
                     
                     // Ensure found item description exists
                     if (!processedNotification.foundItemDescription) {
-                        console.log('Found item description missing, using fallback');
                         processedNotification.foundItemDescription = "Description not available";
                     }
                     
@@ -228,82 +288,52 @@ export default function NotificationsScreen({ navigation }) {
                         processedNotification.foundItemName = "Found Item";
                     }
                     
+                    // Ensure the match ID is correctly formatted
+                    if (processedNotification.matchId && typeof processedNotification.matchId === 'object') {
+                        processedNotification.matchId = processedNotification.matchId.toString();
+                    }
+                    
                     // Log the processed notification details
                     console.log('Processed match notification:', JSON.stringify({
                         id: processedNotification._id,
                         type: processedNotification.type,
-                        lostItemName: processedNotification.lostItemName || 'Unnamed item',
-                        lostItemDesc: processedNotification.lostItemDescription ? 
-                            (processedNotification.lostItemDescription.substring(0, 20) + '...') : 'Missing',
-                        foundItemName: processedNotification.foundItemName || 'Unnamed item',
-                        foundItemDesc: processedNotification.foundItemDescription ? 
-                            (processedNotification.foundItemDescription.substring(0, 20) + '...') : 'Missing'
+                        matchId: processedNotification.matchId,
+                        lostItemName: processedNotification.lostItemName,
+                        foundItemName: processedNotification.foundItemName,
+                        similarityScore: processedNotification.similarityScore || 'not available'
                     }, null, 2));
-                    
-                    return processedNotification;
-                } else if (notification.type === 'lost_item_repost') {
-                    console.log(`Processing lost_item_repost notification ${notification._id}`);
-                    
-                    // Make a deep copy to avoid reference issues
-                    const processedNotification = {...notification};
-                    
-                    // Ensure required fields exist
+                } else if (notification.type === 'lost_item_report') {
+                    // Ensure item name is available
                     if (!processedNotification.itemName) {
                         processedNotification.itemName = "Lost Item";
                     }
+                    }
                     
                     return processedNotification;
-                }
-                return notification;
             });
             
-            // Check specifically for match notifications
-            const matchNotifications = processedNotifications.filter(n => n.type === 'match_found');
-            console.log('Match notifications found:', matchNotifications.length);
-            if (matchNotifications.length > 0) {
-                console.log('First match notification:', JSON.stringify({
-                    id: matchNotifications[0]._id,
-                    matchId: matchNotifications[0].matchId,
-                    lostItemDescription: matchNotifications[0].lostItemDescription ? 'Present' : 'Missing',
-                    foundItemDescription: matchNotifications[0].foundItemDescription ? 'Present' : 'Missing'
-                }, null, 2));
+            // Update the notifications state based on pagination
+            if (shouldRefresh) {
+                setNotifications(processedNotifications);
+            } else {
+                setNotifications(prev => [...prev, ...processedNotifications]);
             }
             
-            // Check for repost notifications
-            const repostNotifications = processedNotifications.filter(n => n.type === 'lost_item_repost');
-            console.log('Repost notifications found:', repostNotifications.length);
-            if (repostNotifications.length > 0) {
-                console.log('First repost notification:', JSON.stringify({
-                    id: repostNotifications[0]._id,
-                    lostItemId: repostNotifications[0].lostItemId,
-                    itemName: repostNotifications[0].itemName,
-                    createdAt: repostNotifications[0].createdAt
-                }, null, 2));
-            }
-            
-            console.log('Setting notifications with processed data');
-            console.log('Should refresh:', shouldRefresh);
-            
-            setNotifications(prev => {
-                const newNotifications = shouldRefresh 
-                    ? processedNotifications 
-                    : [...prev, ...processedNotifications];
-                
-                console.log(`Total notifications after update: ${newNotifications.length}`);
-                return newNotifications;
-            });
-            
-            setHasMore(data.hasMore);
+            // Update pagination state
+            setHasMore(data.hasMore === true);
             setPage(pageNum);
-            console.log(`Updated page to ${pageNum}, hasMore: ${data.hasMore}`);
             
+            // Update loading states
             setLoading(false);
             setRefreshing(false);
+            
+            // Update unread count
+            updateUnreadCount();
         } catch (error) {
             console.error('Error fetching notifications:', error);
             setLoading(false);
             setRefreshing(false);
-            Alert.alert('Error', 'Failed to load notifications');
+            setError('Failed to load notifications');
         }
     };
 
@@ -317,52 +347,113 @@ export default function NotificationsScreen({ navigation }) {
                 return;
             }
 
-            const url = `${API_CONFIG.API_URL}/api/notifications/poll/${userId}?lastPolled=${lastPolled}`;
-            console.log('Polling notifications from:', url);
+            const lastPolled = lastPolledRef.current || Date.now();
+            console.log(`Polling for new notifications since: ${new Date(lastPolled).toISOString()}`);
             
-            const response = await fetch(url);
-            console.log('Polling response status:', response.status);
-
-            if (!response.ok) {
-                const errorData = await response.text();
-                console.error('Error response from polling:', errorData);
-                return;
+            // Poll regular notifications
+            const response = await axios.get(`${API_CONFIG.API_URL}/api/notifications/poll/${userId}`, {
+                params: { lastPolled }
+            });
+            
+            // Poll for new matches
+            const matchesResponse = await axios.get(`${API_CONFIG.API_URL}/api/view-matches?userId=${userId}`);
+            
+            // Update last polled time
+            lastPolledRef.current = Date.now();
+            
+            let newNotifications = [];
+            
+            // Process regular notifications if available
+            if (response.data.notifications && Array.isArray(response.data.notifications)) {
+                newNotifications = [...response.data.notifications];
             }
             
-            const data = await response.json();
-            
-            if (!data.success) {
-                console.error('Failed to poll notifications:', data);
-                throw new Error(data.error || 'Failed to fetch notifications');
+            // Process match notifications
+            if (matchesResponse.data && matchesResponse.data.matches && Array.isArray(matchesResponse.data.matches)) {
+                const matches = matchesResponse.data.matches;
+                
+                // Find matches created after the last poll time
+                const recentMatches = matches.filter(match => 
+                    new Date(match.createdAt) > new Date(lastPolled)
+                );
+                
+                console.log(`Found ${recentMatches.length} new matches since last poll`);
+                
+                // Convert recent matches to notifications - only for user's own items
+                const matchNotifications = recentMatches.map(match => {
+                    // Check if this match involves the current user
+                    const isLostItemUser = match.lostUserId && match.lostUserId.toString() === userId.toString();
+                    const isFoundItemUser = match.foundUserId && match.foundUserId.toString() === userId.toString();
+                    
+                    // Skip if this user is not involved in the match
+                    if (!isLostItemUser && !isFoundItemUser) {
+                        console.log(`Match ${match._id} does not involve current user ${userId}, skipping notification`);
+                        return null;
+                    }
+                    
+                    let message, itemName, title;
+                    
+                    if (isLostItemUser) {
+                        // User reported the lost item
+                        itemName = match.lostItemId?.itemName || 'unknown item';
+                        title = "Match Found!";
+                        message = `Someone may have found your lost ${itemName}!`;
+                    } else if (isFoundItemUser) {
+                        // User reported the found item
+                        itemName = match.foundItemId?.itemName || 'unknown item';
+                        const lostItemName = match.lostItemId?.itemName || 'item';
+                        title = "Match Found!";
+                        message = `Your found item matches with someone's lost ${lostItemName}!`;
+                    }
+                    
+                    // Create notification object
+                    return {
+                        _id: `match_${match._id}`,
+                        type: 'match_found',
+                        title: title,
+                        message: message,
+                        createdAt: match.createdAt,
+                        read: false,
+                        matchId: match._id,
+                        lostItemId: match.lostItemId?._id,
+                        foundItemId: match.foundItemId?._id,
+                        lostItemName: match.lostItemId?.itemName,
+                        foundItemName: match.foundItemId?.itemName,
+                        lostItemDescription: match.lostItemId?.description,
+                        foundItemDescription: match.foundItemId?.description,
+                        lostItemLocation: match.lostItemId?.location,
+                        foundItemLocation: match.foundItemId?.location,
+                        lostItemCategory: match.lostItemId?.category,
+                        foundItemCategory: match.foundItemId?.category,
+                        lostItemDate: match.lostItemId?.date,
+                        foundItemDate: match.foundItemId?.date,
+                        similarityScore: match.similarityScore,
+                        isLostItemUser: isLostItemUser,
+                        isFoundItemUser: isFoundItemUser,
+                        category: isLostItemUser ? match.lostItemId?.category : match.foundItemId?.category,
+                        location: isLostItemUser ? match.lostItemId?.location : match.foundItemId?.location,
+                        matchDate: match.createdAt
+                    };
+                }).filter(notification => notification !== null);
+                
+                // Add match notifications to the list of new notifications
+                newNotifications = [...matchNotifications, ...newNotifications];
             }
-
-            const newNotifications = data.notifications || [];
-            console.log(`Polling received ${newNotifications.length} new notifications`);
             
             if (newNotifications.length === 0) {
-                console.log('No new notifications in polling response');
+                console.log('No new notifications found');
                 return;
             }
             
-            // Log all notification types we received in polling
-            const notificationTypes = {};
-            newNotifications.forEach(notification => {
-                notificationTypes[notification.type] = (notificationTypes[notification.type] || 0) + 1;
-            });
-            console.log('Notification types in polling:', notificationTypes);
+            console.log(`Polled ${newNotifications.length} new notifications`);
             
-            // Log the most recent polled notification
-            if (newNotifications.length > 0) {
-                const mostRecent = newNotifications[0];
-                console.log('Most recent polled notification:', JSON.stringify({
-                    id: mostRecent._id,
-                    type: mostRecent.type,
-                    title: mostRecent.title,
-                    message: mostRecent.message,
-                    createdAt: mostRecent.createdAt,
-                    read: mostRecent.read
-                }, null, 2));
-            }
+            // Count notification types for logging
+            const notificationTypes = {};
+            newNotifications.forEach(n => {
+                notificationTypes[n.type] = (notificationTypes[n.type] || 0) + 1;
+            });
+            
+            console.log('Notification types in polling:', notificationTypes);
             
             // Process any match notifications to ensure descriptions are available
             const processedNewNotifications = newNotifications.map(notification => {
@@ -374,13 +465,11 @@ export default function NotificationsScreen({ navigation }) {
                     
                     // Ensure lost item description exists
                     if (!processedNotification.lostItemDescription) {
-                        console.log('Lost item description missing in new notification, using fallback');
                         processedNotification.lostItemDescription = "Description not available";
                     }
                     
                     // Ensure found item description exists
                     if (!processedNotification.foundItemDescription) {
-                        console.log('Found item description missing in new notification, using fallback');
                         processedNotification.foundItemDescription = "Description not available";
                     }
                     
@@ -393,16 +482,9 @@ export default function NotificationsScreen({ navigation }) {
                         processedNotification.foundItemName = "Found Item";
                     }
                     
-                    return processedNotification;
-                } else if (notification.type === 'lost_item_repost') {
-                    console.log(`Processing new lost_item_repost notification ${notification._id}`);
-                    
-                    // Make a deep copy to avoid reference issues
-                    const processedNotification = {...notification};
-                    
-                    // Ensure required fields exist
-                    if (!processedNotification.itemName) {
-                        processedNotification.itemName = "Lost Item";
+                    // Ensure the match ID is properly formatted
+                    if (processedNotification.matchId && typeof processedNotification.matchId === 'object') {
+                        processedNotification.matchId = processedNotification.matchId.toString();
                     }
                     
                     return processedNotification;
@@ -410,60 +492,52 @@ export default function NotificationsScreen({ navigation }) {
                 return notification;
             });
             
-            // Log match notifications
-            const newMatchNotifications = processedNewNotifications.filter(n => n.type === 'match_found');
-            console.log(`Received ${newMatchNotifications.length} new match notifications from polling`);
-            if (newMatchNotifications.length > 0) {
-                console.log('First new match notification from polling:', JSON.stringify({
-                    id: newMatchNotifications[0]._id,
-                    matchId: newMatchNotifications[0].matchId,
-                    lostItemDesc: newMatchNotifications[0].lostItemDescription ? 'Present' : 'Missing',
-                    foundItemDesc: newMatchNotifications[0].foundItemDescription ? 'Present' : 'Missing'
-                }, null, 2));
-            }
+            // Check for unread match notifications
+            const unreadMatchNotifications = processedNewNotifications.filter(
+                n => n.type === 'match_found' && !n.read
+            );
             
-            // Log repost notifications
-            const newRepostNotifications = processedNewNotifications.filter(n => n.type === 'lost_item_repost');
-            console.log(`Received ${newRepostNotifications.length} new repost notifications from polling`);
-            if (newRepostNotifications.length > 0) {
-                console.log('First new repost notification from polling:', JSON.stringify({
-                    id: newRepostNotifications[0]._id,
-                    lostItemId: newRepostNotifications[0].lostItemId,
-                    itemName: newRepostNotifications[0].itemName
-                }, null, 2));
-            }
-            
-            if (processedNewNotifications.length > 0) {
-                console.log(`Adding ${processedNewNotifications.length} new notifications to state`);
+            if (unreadMatchNotifications.length > 0) {
+                console.log(`Found ${unreadMatchNotifications.length} unread match notifications`);
                 
-                setNotifications(prev => {
-                    // Get existing IDs to avoid duplicates
-                    const existingIds = new Set(prev.map(item => item._id));
-                    
-                    // Filter out any notifications that already exist in our state
-                    const uniqueNewNotifications = processedNewNotifications.filter(
-                        item => !existingIds.has(item._id)
+                // Vibrate device for matches (if supported by the device)
+                if (Platform.OS !== 'web') {
+                    Vibration.vibrate([0, 500, 200, 500]);
+                }
+                
+                // Show an alert for the most recent match
+                const mostRecentMatch = unreadMatchNotifications[0];
+                
+                if (Platform.OS !== 'web' && AppState.currentState === 'active') {
+                    Alert.alert(
+                        'New Match Found!',
+                        mostRecentMatch.message,
+                        [
+                            { 
+                                text: 'View', 
+                                onPress: () => {
+                                    const matchId = mostRecentMatch.matchId;
+                                    if (matchId) {
+                                        markAsRead(mostRecentMatch._id);
+                                        navigation.navigate('MatchDetailsScreen', { matchId });
+                                    } else {
+                                        console.log('No matchId available, cannot navigate');
+                                    }
+                                }
+                            },
+                            { text: 'Dismiss', style: 'cancel' }
+                        ]
                     );
-                    
-                    console.log(`After filtering, adding ${uniqueNewNotifications.length} truly new notifications`);
-                    
-                    if (uniqueNewNotifications.length === 0) {
-                        console.log('No unique new notifications to add');
-                        return prev;
-                    }
-                    
-                    // Add new notifications to the beginning of the array
-                    const updatedNotifications = [...uniqueNewNotifications, ...prev];
-                    console.log(`Total notifications after polling update: ${updatedNotifications.length}`);
-                    return updatedNotifications;
-                });
-                
-                // Show a toast or alert for new notifications if you want
-                console.log('New notifications arrived');
+                }
             }
-
-            setLastPolled(data.timestamp || Date.now());
-            console.log(`Updated lastPolled timestamp to: ${new Date(data.timestamp || Date.now()).toISOString()}`);
+            
+            // Add new notifications to the list
+            if (processedNewNotifications.length > 0) {
+                setNotifications(prevNotifications => [
+                    ...processedNewNotifications,
+                    ...prevNotifications
+                ]);
+            }
         } catch (error) {
             console.error('Error polling notifications:', error);
         }
@@ -520,178 +594,28 @@ export default function NotificationsScreen({ navigation }) {
         }
     };
 
-    // Setup polling
+    // Fetch all lost items for display in notifications
     useEffect(() => {
-        let pollTimer;
-
-        if (isFocused) {
-            pollTimer = setInterval(pollNotifications, API_CONFIG.POLLING_INTERVAL);
-            pollNotifications(); // Initial poll
-        }
-
-        return () => {
-            if (pollTimer) clearInterval(pollTimer);
-        };
-    }, [isFocused]);
-
-    // Initial fetch
-    useEffect(() => {
-        if (isFocused) {
-            setLoading(true);
-            fetchNotifications(1, true);
-            fetchAllLostItems();
-        }
-    }, [isFocused]);
-
-    // Add AppState listener to refresh when app comes to foreground
-    useEffect(() => {
-        const handleAppStateChange = (nextAppState) => {
-            console.log('App state changed to:', nextAppState);
-            if (nextAppState === 'active' && isFocused) {
-                console.log('App became active while on notifications screen, refreshing data');
-                onRefresh();
+        const fetchAllLostItems = async () => {
+            try {
+                const response = await fetch(`${API_CONFIG.API_URL}/all-lost-items`);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log(`Found ${data.items?.length || 0} lost items`);
+                    // Use this data to enrich match notification details
+                    setAllLostItems(data.items || []);
+                }
+            } catch (error) {
+                console.error('Error fetching all lost items:', error);
             }
         };
-
-        // Subscribe to AppState changes
-        const subscription = AppState.addEventListener('change', handleAppStateChange);
-
-        return () => {
-            // Clean up the subscription
-            subscription.remove();
-        };
-    }, [isFocused, onRefresh]);
-
-    // Handle refresh
-    const onRefresh = useCallback(() => {
-        setRefreshing(true);
-        fetchNotifications(1, true);
+        
         fetchAllLostItems();
     }, []);
 
-    // Load more notifications
-    const loadMore = () => {
-        if (!loading && hasMore) {
-            fetchNotifications(page + 1);
-        }
-    };
-
-    // Render notification item
-    const renderNotification = ({ item }) => {
-        const getNotificationIcon = (type) => {
-            switch (type) {
-                case 'match_found':
-                    return 'target';
-                case 'message_received':
-                    return 'message-text';
-                case 'lost_item_report':
-                    return 'alert-outline';
-                case 'lost_item_repost':
-                    return 'alert-circle-outline';
-                default:
-                    return 'bell';
-            }
-        };
-
-        const handleNotificationPress = (notification) => {
-            console.log('Notification pressed:', notification.type);
-            markAsRead(notification._id);
-            
-            // Navigate based on notification type
-            if (notification.type === 'message_received' && notification.chatId) {
-                console.log('Navigating to Chat with chatId:', notification.chatId);
-                navigation.navigate('Chat', { chatId: notification.chatId });
-            } else if (notification.type === 'match_found') {
-                console.log('Match notification pressed, details:', JSON.stringify(notification, null, 2));
-                
-                // Handle the matchId with better error checking
-                let matchId = null;
-                
-                // Check all possible locations for matchId
-                if (typeof notification.matchId === 'string' && notification.matchId.length > 0) {
-                    matchId = notification.matchId;
-                } else if (notification.matchId && notification.matchId._id) {
-                    matchId = notification.matchId._id;
-                } else if (notification._doc && notification._doc.matchId) {
-                    matchId = notification._doc.matchId;
-                }
-                
-                console.log('Extracted matchId:', matchId);
-                
-                if (matchId) {
-                    console.log('Navigating to MatchDetailsScreen with matchId:', matchId);
-                    // Ensure we navigate to MatchDetailsScreen, not MatchDetails
-                    navigation.navigate('MatchDetailsScreen', { matchId: matchId });
-                } else {
-                    console.log('No matchId available in match notification, trying to handle navigation differently');
-                    
-                    // If we have both lost and found item IDs, we can try to build a match details view
-                    if (notification.lostItemId && notification.foundItemId) {
-                        Alert.alert(
-                            "Match Details", 
-                            "Would you like to view details for the lost item or the found item?",
-                            [
-                                {
-                                    text: "View Lost Item", 
-                                    onPress: () => {
-                                        console.log("Navigating to lost item details");
-                                        navigation.navigate('ItemDetails', { 
-                                            itemId: notification.lostItemId,
-                                            itemType: 'lost'
-                                        });
-                                    }
-                                },
-                                {
-                                    text: "View Found Item", 
-                                    onPress: () => {
-                                        console.log("Navigating to found item details");
-                                        navigation.navigate('ItemDetails', { 
-                                            itemId: notification.foundItemId,
-                                            itemType: 'found'
-                                        });
-                                    }
-                                },
-                                {
-                                    text: "Cancel",
-                                    style: "cancel"
-                                }
-                            ]
-                        );
-                    } else {
-                        // If we don't have item IDs either, show an error
-                        Alert.alert(
-                            "Navigation Error", 
-                            "Cannot view match details - match ID is missing.",
-                            [{ text: "OK", onPress: () => console.log("OK Pressed") }]
-                        );
-                    }
-                }
-            } else if ((notification.type === 'lost_item_report' || notification.type === 'lost_item_repost') && notification.lostItemId) {
-                // Navigate to lost item details
-                console.log('Navigating to ItemDetails with lostItemId:', notification.lostItemId);
-                navigation.navigate('ItemDetails', { 
-                    itemId: notification.lostItemId,
-                    itemType: 'lost'
-                });
-            } else {
-                console.log('No navigation performed - missing required data');
-                console.log('Notification data:', JSON.stringify(notification, null, 2));
-            }
-        };
-
-        // Format additional details for item notifications
+    // Format additional details for item notifications with enhanced lost item details
         const renderAdditionalDetails = (notification) => {
-            if (notification.type === 'lost_item_report' || notification.type === 'lost_item_repost') {
-                console.log(`Rendering details for ${notification.type} notification:`, JSON.stringify({
-                    id: notification._id,
-                    type: notification.type,
-                    lostItemId: notification.lostItemId,
-                    itemName: notification.itemName,
-                    location: notification.location,
-                    date: notification.date,
-                    category: notification.category
-                }, null, 2));
-                
+        if (notification.type === 'lost_item_report') {
                 return (
                     <View style={styles.notificationDetails}>
                         {notification.location && (
@@ -745,14 +669,6 @@ export default function NotificationsScreen({ navigation }) {
                     </View>
                 );
             } else if (notification.type === 'match_found') {
-                console.log('Rendering match notification:', JSON.stringify({
-                    id: notification._id,
-                    matchId: notification.matchId,
-                    matchDate: notification.matchDate,
-                    lostItemId: notification.lostItemId,
-                    foundItemId: notification.foundItemId,
-                }));
-                
                 // Ensure matchId is extracted from the notification
                 let matchId = notification.matchId;
                 if (!matchId && notification._doc && notification._doc.matchId) {
@@ -771,14 +687,30 @@ export default function NotificationsScreen({ navigation }) {
                     : formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true });
                 
                 // Determine if the user is the one who lost the item or found the item
-                const isLostItemUser = !!notification.lostItemId;
-                const isFoundItemUser = !!notification.foundItemId;
+            const isLostItemUser = notification.isLostItemUser || !!notification.lostItemId;
+            const isFoundItemUser = notification.isFoundItemUser || !!notification.foundItemId;
+            
+            // Calculate similarity percentage for display
+            const similarityPercentage = Math.round((notification.similarityScore || 0) * 100);
+            
+            // Determine color based on similarity score
+            const getScoreColor = (score) => {
+                if (score >= 0.7) return '#28a745';  // Green for high match
+                if (score >= 0.4) return '#ffc107';  // Yellow for moderate match
+                return '#dc3545';  // Red for low match
+            };
+            
+            const scoreColor = getScoreColor(notification.similarityScore || 0);
                 
                 return (
                     <View style={styles.matchNotificationDetails}>
                         <View style={styles.matchHeader}>
                             <Icon name="target" size={20} color="#ff6b6b" />
                             <Text style={styles.matchTitleText}>Match Found!</Text>
+                        <View style={styles.matchBadge}>
+                            <Icon name="percent" size={14} color="#fff" />
+                            <Text style={styles.matchBadgeText}>{similarityPercentage}% Match</Text>
+                        </View>
                         </View>
                         
                         <View style={styles.matchIntro}>
@@ -786,41 +718,113 @@ export default function NotificationsScreen({ navigation }) {
                                 <Text style={styles.matchIntroText}>
                                     Someone found an item that matches your lost {notification.lostItemName || "item"}!
                                 </Text>
+                        ) : isFoundItemUser ? (
+                            <Text style={styles.matchIntroText}>
+                                Your found item matches with someone's lost {notification.lostItemName || "item"}!
+                            </Text>
                             ) : (
                                 <Text style={styles.matchIntroText}>
-                                    Your found item matches with someone's lost item!
+                                System detected a match between lost and found items.
                                 </Text>
                             )}
                         </View>
                         
+                    {/* Match Details */}
                         <View style={styles.matchInfoContainer}>
-                            {/* Item Name */}
-                            <View style={styles.detailRow}>
-                                <Icon name="information-outline" size={16} color="#555" />
-                                <Text style={styles.detailText}>
-                                    <Text style={{fontWeight: 'bold'}}>
-                                        {isLostItemUser ? "Your lost item: " : "Your found item: "}
+                        {/* Items Information */}
+                        <View style={styles.matchItemsInfo}>
+                            <View style={styles.matchItemColumn}>
+                                <View style={styles.matchItemColumnHeader}>
+                                    <Icon name="alert-circle-outline" size={16} color="#3d0c45" />
+                                    <Text style={styles.matchItemColumnTitle}>Lost Item</Text>
+                                </View>
+                                
+                                <Text style={styles.matchItemName}>
+                                    {notification.lostItemName || "Lost Item"}
+                                </Text>
+                                
+                                {notification.lostItemDescription && (
+                                    <Text style={styles.matchItemDescription} numberOfLines={2}>
+                                        {notification.lostItemDescription}
                                     </Text>
-                                    {isLostItemUser 
-                                        ? notification.lostItemName || "Your lost item" 
-                                        : notification.foundItemName || "Your found item"}
+                                )}
+                                
+                                {notification.lostItemLocation && (
+                            <View style={styles.detailRow}>
+                                        <Icon name="map-marker" size={14} color="#555" />
+                                <Text style={styles.detailText}>
+                                            {notification.lostItemLocation}
+                                    </Text>
+                                    </View>
+                                )}
+                                
+                                {notification.lostItemCategory && (
+                                    <View style={styles.detailRow}>
+                                        <Icon name="tag" size={14} color="#555" />
+                                        <Text style={styles.detailText}>
+                                            {notification.lostItemCategory}
                                 </Text>
                             </View>
+                                )}
                             
-                            {/* Matching Item */}
+                                {notification.lostItemDate && (
                             <View style={styles.detailRow}>
-                                <Icon name="swap-horizontal" size={16} color="#555" />
+                                        <Icon name="calendar" size={14} color="#555" />
                                 <Text style={styles.detailText}>
-                                    <Text style={{fontWeight: 'bold'}}>
-                                        {isLostItemUser ? "Matches with found item: " : "Matches with lost item: "}
+                                            {new Date(notification.lostItemDate).toLocaleDateString()}
                                     </Text>
-                                    {isLostItemUser 
-                                        ? notification.foundItemName || "Found item" 
-                                        : notification.lostItemName || "Lost item"}
-                                </Text>
+                                    </View>
+                                )}
                             </View>
                             
-                            {/* Match Time */}
+                            <View style={styles.matchItemDivider} />
+                            
+                            <View style={styles.matchItemColumn}>
+                                <View style={styles.matchItemColumnHeader}>
+                                    <Icon name="magnify" size={16} color="#3d0c45" />
+                                    <Text style={styles.matchItemColumnTitle}>Found Item</Text>
+                                </View>
+                                
+                                <Text style={styles.matchItemName}>
+                                    {notification.foundItemName || "Found Item"}
+                                </Text>
+                                
+                                {notification.foundItemDescription && (
+                                    <Text style={styles.matchItemDescription} numberOfLines={2}>
+                                        {notification.foundItemDescription}
+                                    </Text>
+                                )}
+                                
+                                {notification.foundItemLocation && (
+                                    <View style={styles.detailRow}>
+                                        <Icon name="map-marker" size={14} color="#555" />
+                                        <Text style={styles.detailText}>
+                                            {notification.foundItemLocation}
+                                </Text>
+                            </View>
+                                )}
+                                
+                                {notification.foundItemCategory && (
+                                    <View style={styles.detailRow}>
+                                        <Icon name="tag" size={14} color="#555" />
+                                        <Text style={styles.detailText}>
+                                            {notification.foundItemCategory}
+                                        </Text>
+                                    </View>
+                                )}
+                                
+                                {notification.foundItemDate && (
+                                    <View style={styles.detailRow}>
+                                        <Icon name="calendar" size={14} color="#555" />
+                                        <Text style={styles.detailText}>
+                                            {new Date(notification.foundItemDate).toLocaleDateString()}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        </View>
+                        
+                        {/* Match Date */}
                             <View style={styles.detailRow}>
                                 <Icon name="clock-outline" size={16} color="#555" />
                                 <Text style={styles.detailText}>
@@ -828,32 +832,144 @@ export default function NotificationsScreen({ navigation }) {
                                     {matchDate}
                                 </Text>
                             </View>
+                        
+                        {/* Match Score */}
+                        <View style={styles.matchScoreContainer}>
+                            <Text style={styles.matchScoreLabel}>Match Similarity</Text>
+                            <View style={styles.scoreBar}>
+                                <View 
+                                    style={[
+                                        styles.scoreBarFill, 
+                                        { width: `${similarityPercentage}%`, backgroundColor: scoreColor }
+                                    ]}
+                                />
+                            </View>
+                            <Text style={[styles.scoreText, { color: scoreColor }]}>
+                                {similarityPercentage}% Match
+                            </Text>
+                        </View>
                         </View>
                         
+                    {/* View Match Button - More prominent */}
                         <TouchableOpacity 
-                            style={styles.matchButtonContainer}
-                            onPress={() => {
-                                console.log('View Match Details button pressed');
-                                console.log('Notification matchId:', matchId);
+                        style={styles.viewMatchButton}
+                        onPress={() => handleMatchNavigation(notification)}
+                    >
+                        <Icon name="target" size={16} color="#fff" />
+                        <Text style={styles.viewMatchButtonText}>View Match Details</Text>
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+        return null;
+    };
+
+    // Render notification item
+    const renderNotification = ({ item }) => {
+        const getNotificationIcon = (type) => {
+            switch (type) {
+                case 'match_found':
+                    return 'target';
+                case 'message_received':
+                    return 'message-text';
+                case 'lost_item_report':
+                    return 'alert-outline';
+                default:
+                    return 'bell';
+            }
+        };
+
+        const handleNotificationPress = (notification) => {
+            console.log('Notification pressed:', notification.type);
                                 markAsRead(notification._id);
+            
+            // Navigate based on notification type
+            if (notification.type === 'message_received' && notification.chatId) {
+                console.log('Navigating to Chat with chatId:', notification.chatId);
+                navigation.navigate('Chat', { chatId: notification.chatId });
+            } else if (notification.type === 'match_found') {
+                // For match notifications, navigation is handled in the View Match button
+                console.log('Match notification pressed, expanding details');
+            } else if (notification.type === 'lost_item_report' && notification.lostItemId) {
+                // Navigate to lost item details
+                console.log('Navigating to ItemDetails with lostItemId:', notification.lostItemId);
+                navigation.navigate('ItemDetails', { 
+                    itemId: notification.lostItemId,
+                    itemType: 'lost'
+                });
+            } else {
+                console.log('No navigation performed - missing required data');
+                console.log('Notification data:', JSON.stringify(notification, null, 2));
+            }
+        };
+
+        // Handle match notification navigation with appropriate error handling
+        const handleMatchNavigation = (notification) => {
+            // Handle the matchId with better error checking
+            let matchId = null;
+            
+            // Check all possible locations for matchId
+            if (typeof notification.matchId === 'string' && notification.matchId.length > 0) {
+                matchId = notification.matchId;
+            } else if (notification.matchId && notification.matchId._id) {
+                matchId = notification.matchId._id;
+            } else if (notification._doc && notification._doc.matchId) {
+                matchId = notification._doc.matchId;
+            }
+            
+            console.log('Extracted matchId:', matchId);
+            
                                 if (matchId) {
                                     console.log('Navigating to MatchDetailsScreen with matchId:', matchId);
+                markAsRead(notification._id);
+                // Ensure we navigate to MatchDetailsScreen, not MatchDetails
                                     navigation.navigate('MatchDetailsScreen', { matchId: matchId });
                                 } else {
-                                    console.log('No matchId available, cannot navigate');
+                console.log('No matchId available in match notification, trying to handle navigation differently');
+                
+                // If we have both lost and found item IDs, we can try to build a match details view
+                if (notification.lostItemId && notification.foundItemId) {
+                    Alert.alert(
+                        "Match Details", 
+                        "Would you like to view details for the lost item or the found item?",
+                        [
+                            {
+                                text: "View Lost Item", 
+                                onPress: () => {
+                                    console.log("Navigating to lost item details");
+                                    markAsRead(notification._id);
+                                    navigation.navigate('ItemDetails', { 
+                                        itemId: notification.lostItemId,
+                                        itemType: 'lost'
+                                    });
+                                }
+                            },
+                            {
+                                text: "View Found Item", 
+                                onPress: () => {
+                                    console.log("Navigating to found item details");
+                                    markAsRead(notification._id);
+                                    navigation.navigate('ItemDetails', { 
+                                        itemId: notification.foundItemId,
+                                        itemType: 'found'
+                                    });
+                                }
+                            },
+                            {
+                                text: "Cancel",
+                                style: "cancel"
+                            }
+                        ]
+                    );
+                } else {
+                    // If we don't have item IDs either, show an error
                                     Alert.alert(
                                         "Navigation Error", 
-                                        "Cannot view match details - match ID is missing."
-                                    );
-                                }
-                            }}
-                        >
-                            <Text style={styles.viewButtonText}>View Match Details</Text>
-                        </TouchableOpacity>
-                    </View>
-                );
+                        "Cannot view match details - match ID is missing.",
+                        [{ text: "OK", onPress: () => console.log("OK Pressed") }]
+                    );
+                }
             }
-            return null;
         };
 
         return (
@@ -877,15 +993,122 @@ export default function NotificationsScreen({ navigation }) {
                             styles.title,
                             item.type === 'match_found' && styles.matchTitle
                         ]}>
-                            {item.title}
+                            {item.title || (item.type === 'match_found' ? 'Match Found!' : 'Notification')}
                         </Text>
                         <Text style={styles.message}>{item.message}</Text>
+                        
+                        {/* Display match badge for match notifications */}
+                        {item.type === 'match_found' && !item.expanded && (
+                            <View style={styles.matchBadgeInline}>
+                                <Icon name="target" size={14} color="#fff" />
+                                <Text style={styles.matchBadgeText}>
+                                    {Math.round((item.similarityScore || 0) * 100)}% Match
+                                </Text>
+                            </View>
+                        )}
+                        
                         {renderAdditionalDetails(item)}
                         <Text style={styles.time}>
                             {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
                         </Text>
                     </View>
                 </View>
+            </TouchableOpacity>
+        );
+    };
+
+    // Render a match item
+    const renderMatchItem = ({ item }) => {
+        const formattedDate = item.date ? new Date(item.date).toLocaleDateString() : 'Unknown';
+        const formattedTime = item.time ? new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+        
+        // Safely handle photo data
+        const hasPhoto = item.photo && typeof item.photo === 'string' && item.photo.length > 0;
+        
+        // Format similarity score
+        const similarityPercentage = Math.round((item.similarityScore || 0) * 100);
+        
+        // Determine color based on similarity score
+        const getScoreColor = (score) => {
+            if (score >= 0.7) return '#28a745';  // Green for high match
+            if (score >= 0.4) return '#ffc107';  // Yellow for moderate match
+            return '#dc3545';  // Red for low match
+        };
+        
+        const scoreColor = getScoreColor(item.similarityScore || 0);
+        
+        return (
+            <TouchableOpacity
+                style={styles.matchItemContainer}
+                onPress={() => navigation.navigate('MatchDetailsScreen', { matchId: item.matchId })}
+            >
+                <View style={styles.matchItemHeader}>
+                    <Icon name="target" size={24} color="#ff6b6b" />
+                    <Text style={styles.matchItemTitle}>{item.itemName || 'Matched Item'}</Text>
+                    
+                    <View style={styles.matchItemBadge}>
+                        <Icon name="percent" size={14} color="#fff" />
+                        <Text style={styles.matchBadgeText}>{similarityPercentage}% Match</Text>
+                    </View>
+                </View>
+                
+                <View style={styles.matchItemDetails}>
+                    {hasPhoto ? (
+                        <Image 
+                            source={{ uri: `data:image/jpeg;base64,${item.photo}` }}
+                            style={styles.matchItemImage}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <View style={[styles.matchItemImage, styles.noImagePlaceholder]}>
+                            <Icon name="image-off" size={30} color="#ccc" />
+                        </View>
+                    )}
+                    
+                    <View style={styles.matchItemInfo}>
+                        <View style={styles.detailRow}>
+                            <Icon name="map-marker" size={16} color="#555" />
+                            <Text style={styles.detailText}>{item.location || 'Unknown location'}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="calendar" size={16} color="#555" />
+                            <Text style={styles.detailText}>{formattedDate}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="clock-outline" size={16} color="#555" />
+                            <Text style={styles.detailText}>{formattedTime}</Text>
+                        </View>
+                        
+                        <View style={styles.detailRow}>
+                            <Icon name="tag" size={16} color="#555" />
+                            <Text style={styles.detailText}>{item.category || 'Uncategorized'}</Text>
+                        </View>
+                    </View>
+                </View>
+                
+                <View style={styles.matchScoreContainer}>
+                    <Text style={styles.matchScoreLabel}>Match Similarity</Text>
+                    <View style={styles.scoreBar}>
+                        <View 
+                            style={[
+                                styles.scoreBarFill, 
+                                { width: `${similarityPercentage}%`, backgroundColor: scoreColor }
+                            ]}
+                        />
+                    </View>
+                    <Text style={[styles.scoreText, { color: scoreColor }]}>
+                        {similarityPercentage}% Match
+                    </Text>
+                </View>
+                
+                <TouchableOpacity 
+                    style={styles.matchButtonContainer}
+                    onPress={() => navigation.navigate('MatchDetailsScreen', { matchId: item.matchId })}
+                >
+                    <Text style={styles.viewButtonText}>View Match Details</Text>
+                </TouchableOpacity>
             </TouchableOpacity>
         );
     };
@@ -904,7 +1127,7 @@ export default function NotificationsScreen({ navigation }) {
                 onPress={() => navigation.navigate('ItemDetails', { itemId: item._id, itemType: 'lost' })}
             >
                 <View style={styles.lostItemHeader}>
-                    <Icon name="alert-outline" size={24} color="#3d0c45" />
+                    <Icon name="alert-circle-outline" size={24} color="#3d0c45" />
                     <Text style={styles.lostItemTitle}>{item.itemName || 'Lost Item'}</Text>
                 </View>
                 
@@ -948,7 +1171,7 @@ export default function NotificationsScreen({ navigation }) {
                     style={styles.viewButtonContainer}
                     onPress={() => navigation.navigate('ItemDetails', { itemId: item._id, itemType: 'lost' })}
                 >
-                    <Text style={styles.viewButtonText}>View Details</Text>
+                    <Text style={styles.viewButtonText}>View Lost Item Details</Text>
                 </TouchableOpacity>
             </TouchableOpacity>
         );
@@ -975,31 +1198,35 @@ export default function NotificationsScreen({ navigation }) {
                 </TouchableOpacity>
             </View>
 
-            {/* Lost Items Section */}
-            <View style={styles.lostItemsSection}>
+            {/* Main content container - scrollable to see all sections */}
+            <FlatList
+                ListHeaderComponent={() => (
+                    <>
+                        {/* Matches Section */}
+                        <View style={styles.matchesSection}>
                 <View style={styles.sectionHeader}>
-                    <Icon name="alert-circle-outline" size={24} color="#3d0c45" />
-                    <Text style={styles.sectionTitle}>Lost Items</Text>
+                                <Icon name="target" size={24} color="#ff6b6b" />
+                                <Text style={styles.sectionTitle}>Your Matches</Text>
                 </View>
                 
-                {loadingLostItems ? (
+                            {loadingMatches ? (
                     <ActivityIndicator size="large" color="#3d0c45" style={styles.loader} />
-                ) : lostItems.length > 0 ? (
+                            ) : matches.length > 0 ? (
                     <FlatList
-                        data={lostItems}
-                        renderItem={renderLostItem}
+                                    data={matches}
+                                    renderItem={renderMatchItem}
                         keyExtractor={item => item._id || Math.random().toString()}
                         horizontal
                         showsHorizontalScrollIndicator={false}
-                        style={styles.lostItemsList}
+                                    style={styles.matchesList}
                     />
                 ) : (
                     <View style={styles.emptyContainer}>
-                        <Icon name="magnify" size={48} color="#666" />
-                        <Text style={styles.emptyText}>No lost items found at this time</Text>
+                                    <Icon name="target-off" size={48} color="#666" />
+                                    <Text style={styles.emptyText}>No matches found at this time</Text>
                         <TouchableOpacity
                             style={styles.refreshButton}
-                            onPress={fetchAllLostItems}
+                                        onPress={() => fetchUserMatches(userId)}
                         >
                             <Text style={styles.refreshButtonText}>Refresh</Text>
                         </TouchableOpacity>
@@ -1007,45 +1234,98 @@ export default function NotificationsScreen({ navigation }) {
                 )}
             </View>
 
-            {/* Notifications Section */}
-            <View style={styles.notificationsSection}>
+                        {/* Match Notifications Section */}
+                        <View style={styles.matchNotificationsSection}>
                 <View style={styles.sectionHeader}>
-                    <Icon name="bell-outline" size={24} color="#3d0c45" />
-                    <Text style={styles.sectionTitle}>Recent Notifications</Text>
-                    
-                    {/* Match indicator badge */}
-                    {notifications.some(n => n.type === 'match_found') && (
-                        <View style={styles.matchBadge}>
-                            <Icon name="target" size={14} color="#fff" />
-                            <Text style={styles.matchBadgeText}>Matches</Text>
+                                <Icon name="target" size={24} color="#ff6b6b" />
+                                <Text style={[styles.sectionTitle, styles.matchTitle]}>Matching Items ({matches.length})</Text>
+                                
+                                {/* Show match count badge */}
+                                {matches.length > 0 && (
+                                    <View style={styles.matchCountBadge}>
+                                        <Text style={styles.matchCountText}>
+                                            {matches.length}
+                                        </Text>
                         </View>
                     )}
                 </View>
                 
+                            {loading ? (
+                                <ActivityIndicator size="large" color="#ff6b6b" style={styles.loader} />
+                            ) : notifications.filter(n => n.type === 'match_found').length > 0 ? (
+                                notifications.filter(n => n.type === 'match_found').map(item => (
+                                    <View key={item._id} style={{marginBottom: 10}}>
+                                        {renderNotification({item})}
+                                    </View>
+                                ))
+                            ) : (
+                                <View style={styles.emptyContainer}>
+                                    <Icon name="target-off" size={48} color="#666" />
+                                    <Text style={styles.emptyText}>No match notifications yet</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* All Lost Items Section */}
+                        <View style={styles.lostItemsSection}>
+                            <View style={styles.sectionHeader}>
+                                <Icon name="alert-circle-outline" size={24} color="#3d0c45" />
+                                <Text style={styles.sectionTitle}>All Lost Items ({allLostItems.length})</Text>
+                            </View>
+                            
+                            {allLostItems.length === 0 ? (
+                                <View style={styles.emptyContainer}>
+                                    <Icon name="alert-off" size={48} color="#666" />
+                                    <Text style={styles.emptyText}>No lost items found</Text>
+                                </View>
+                            ) : (
                 <FlatList
-                    data={notifications}
+                                    data={allLostItems}
+                                    renderItem={renderLostItem}
+                                    keyExtractor={item => item._id || Math.random().toString()}
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    style={styles.lostItemsList}
+                                    contentContainerStyle={{paddingBottom: 10}}
+                                />
+                            )}
+                        </View>
+                        
+                        {/* Other Notifications Section Header */}
+                        <View style={styles.notificationsHeaderSection}>
+                            <View style={styles.sectionHeader}>
+                                <Icon name="bell-outline" size={24} color="#3d0c45" />
+                                <Text style={styles.sectionTitle}>Recent Notifications</Text>
+                            </View>
+                        </View>
+                    </>
+                )}
+                data={notifications.filter(n => n.type !== 'match_found')}
                     renderItem={renderNotification}
                     keyExtractor={item => item._id}
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
-                            onRefresh={onRefresh}
+                        onRefresh={fetchNotifications}
                             colors={['#3d0c45']}
                         />
                     }
-                    onEndReached={loadMore}
+                onEndReached={() => {
+                    if (!loading && hasMore) {
+                        fetchNotifications(page + 1);
+                    }
+                }}
                     onEndReachedThreshold={0.5}
                     ListEmptyComponent={
                         !loading && (
                             <View style={styles.emptyContainer}>
                                 <Icon name="bell-off" size={48} color="#666" />
-                                <Text style={styles.emptyText}>No notifications yet</Text>
+                            <Text style={styles.emptyText}>No general notifications yet</Text>
                             </View>
                         )
                     }
                     style={styles.notificationsList}
                 />
-            </View>
         </View>
     );
 }
@@ -1082,7 +1362,7 @@ const styles = StyleSheet.create({
         fontSize: 14
     },
     // Lost Items Section
-    lostItemsSection: {
+    matchesSection: {
         backgroundColor: '#fff',
         padding: 16,
         marginBottom: 8,
@@ -1098,10 +1378,10 @@ const styles = StyleSheet.create({
         color: '#3d0c45',
         marginLeft: 8,
     },
-    lostItemsList: {
+    matchesList: {
         minHeight: 220,
     },
-    lostItemContainer: {
+    matchItemContainer: {
         width: 280,
         backgroundColor: '#f8f0ff',
         borderRadius: 8,
@@ -1113,28 +1393,37 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         elevation: 2,
     },
-    lostItemHeader: {
+    matchItemHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 8,
     },
-    lostItemTitle: {
+    matchItemTitle: {
         fontSize: 16,
         fontWeight: 'bold',
         marginLeft: 8,
         color: '#3d0c45',
     },
-    lostItemDetails: {
+    matchItemDetails: {
         flexDirection: 'row',
     },
-    lostItemImage: {
+    matchItemImage: {
         width: 80,
         height: 80,
         borderRadius: 4,
         marginRight: 12,
     },
-    lostItemInfo: {
+    matchItemInfo: {
         flex: 1,
+    },
+    matchItemBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ff6b6b',
+        borderRadius: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginLeft: 'auto',
     },
     loader: {
         marginVertical: 20,
@@ -1350,6 +1639,160 @@ const styles = StyleSheet.create({
         marginLeft: 'auto',
     },
     matchBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginLeft: 4,
+    },
+    viewMatchButton: {
+        backgroundColor: '#ff6b6b',
+        padding: 12,
+        borderRadius: 6,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    viewMatchButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginLeft: 8,
+    },
+    matchBadgeInline: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ff6b6b',
+        borderRadius: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginLeft: 'auto',
+    },
+    matchBadgeTextInline: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginLeft: 4,
+    },
+    matchNotificationsSection: {
+        flex: 1,
+        backgroundColor: '#fff',
+        paddingTop: 16,
+    },
+    matchNotificationsList: {
+        flex: 1,
+    },
+    matchCountBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ff6b6b',
+        borderRadius: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginLeft: 'auto',
+    },
+    matchCountText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    matchItemsInfo: {
+        flexDirection: 'row',
+        marginBottom: 8,
+    },
+    matchItemColumn: {
+        flex: 1,
+        marginRight: 8,
+    },
+    matchItemColumnHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    matchItemColumnTitle: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#3d0c45',
+        marginLeft: 4,
+    },
+    matchItemName: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#3d0c45',
+    },
+    matchItemDescription: {
+        fontSize: 12,
+        color: '#495057',
+    },
+    matchItemDivider: {
+        width: 1,
+        height: '100%',
+        backgroundColor: '#e9ecef',
+        marginHorizontal: 8,
+    },
+    notificationsHeaderSection: {
+        backgroundColor: '#fff',
+        padding: 16,
+        marginBottom: 8,
+    },
+    lostItemsSection: {
+        backgroundColor: '#fff',
+        padding: 16,
+        marginBottom: 8,
+    },
+    lostItemsList: {
+        minHeight: 220,
+    },
+    lostItemContainer: {
+        width: 280,
+        backgroundColor: '#f8f0ff',
+        borderRadius: 8,
+        padding: 12,
+        marginRight: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    lostItemHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    lostItemTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 8,
+        color: '#3d0c45',
+    },
+    lostItemDetails: {
+        flexDirection: 'row',
+    },
+    lostItemImage: {
+        width: 80,
+        height: 80,
+        borderRadius: 4,
+        marginRight: 12,
+    },
+    lostItemInfo: {
+        flex: 1,
+    },
+    lostItemBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ff6b6b',
+        borderRadius: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginLeft: 'auto',
+    },
+    lostItemBadgeText: {
         color: '#fff',
         fontSize: 12,
         fontWeight: 'bold',

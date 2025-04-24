@@ -235,6 +235,8 @@ const DashboardScreen = ({ navigation }) => {
           navigation.navigate('ActivityListScreen', { filter: 'found' });
         } else if (title === 'Matches') {
           navigation.navigate('MatchingScreen');
+        } else if (title === 'Returned Items') {
+          navigation.navigate('ReturnedItemsScreen');
         }
       }}
     >
@@ -287,6 +289,12 @@ const DashboardScreen = ({ navigation }) => {
               value={stats.totalMatches} 
               icon="git-compare-outline" 
               color="#9d5ca3" 
+            />
+            <StatCard 
+              title="Returned Items" 
+              value={stats.returnedItems} 
+              icon="checkbox-outline" 
+              color="#28a745" 
             />
           </View>
           

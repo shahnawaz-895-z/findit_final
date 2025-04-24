@@ -22,6 +22,7 @@ import MatchingScreen from './screens/MatchingScreen.js';
 import MatchDetailsScreen from './screens/MatchDetailsScreen.js';
 import PotentialMatchesScreen from './screens/PotentialMatchesScreen.js';
 import ItemDetailsScreen from './screens/ItemDetailsScreen';
+import ReturnedItemsScreen from './screens/ReturnedItemsScreen';
 
 const Stack = createStackNavigator();
 
@@ -113,7 +114,19 @@ export default function App() {
                 headerTintColor: '#fff',
                 headerShown: true,
             }}
-          />    
+          />
+          <Stack.Screen 
+            name="ReturnedItemsScreen" 
+            component={ReturnedItemsScreen} 
+            options={{
+                title: 'Returned Items',
+                headerStyle: {
+                    backgroundColor: '#3d0c45',
+                },
+                headerTintColor: '#fff',
+                headerShown: true,
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
